@@ -14,6 +14,7 @@ type Stroke = { tool: Tool; color: string; lineWidth: number; points: Point[] };
 
 const COLORS = ["#000000", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899"];
 const LINE_WIDTHS = [2, 4, 6, 10];
+const BOARD_BG = "#ffffff";
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,9 +59,9 @@ export default function Home() {
     ctx.lineJoin = "round";
     ctx.lineWidth = s.lineWidth;
     if (s.tool === "eraser") {
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.strokeStyle = "rgba(0,0,0,1)";
-      ctx.fillStyle = "rgba(0,0,0,1)";
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = BOARD_BG;
+      ctx.fillStyle = BOARD_BG;
     } else {
       ctx.globalCompositeOperation = "source-over";
       ctx.strokeStyle = s.color;
@@ -95,9 +96,9 @@ export default function Home() {
     ctx.lineJoin = "round";
     ctx.lineWidth = s.lineWidth;
     if (s.tool === "eraser") {
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.strokeStyle = "rgba(0,0,0,1)";
-      ctx.fillStyle = "rgba(0,0,0,1)";
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = BOARD_BG;
+      ctx.fillStyle = BOARD_BG;
     } else {
       ctx.globalCompositeOperation = "source-over";
       ctx.strokeStyle = s.color;
@@ -133,6 +134,8 @@ export default function Home() {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = BOARD_BG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
     const all = currentRef.current ? [...strokesRef.current, currentRef.current] : strokesRef.current;
     for (const s of all) renderStroke(ctx, s);
