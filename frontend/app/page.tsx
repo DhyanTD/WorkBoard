@@ -12,8 +12,16 @@ type Tool = "pen" | "pencil" | "eraser" | "square" | "circle";
 type Point = { x: number; y: number };
 type Stroke = { tool: Tool; color: string; lineWidth: number; points: Point[] };
 
-const COLORS = ["#000000", "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899"];
-const LINE_WIDTHS = [2, 4, 6, 10];
+const COLORS = [
+  "#000000",
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+];
 const BOARD_BG = "#ffffff";
 
 export default function Home() {
@@ -50,99 +58,111 @@ export default function Home() {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }, []);
 
-  const renderStroke = useCallback((ctx: CanvasRenderingContext2D, s: Stroke) => {
-    const p = s.points;
-    if (p.length === 0) return;
+  const renderStroke = useCallback(
+    (ctx: CanvasRenderingContext2D, s: Stroke) => {
+      const p = s.points;
+      if (p.length === 0) return;
 
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = s.lineWidth;
-    if (s.tool === "eraser") {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = BOARD_BG;
-      ctx.fillStyle = BOARD_BG;
-    } else {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = s.color;
-      ctx.fillStyle = s.color;
-    }
-
-    if (p.length === 1) {
-      ctx.beginPath();
-      ctx.arc(p[0].x, p[0].y, s.lineWidth / 2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      return;
-    }
-
-    if (s.tool === "square" || s.tool === "circle") {
-      const a = p[0];
-      const b = p[p.length - 1];
-      const x = Math.min(a.x, b.x);
-      const y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x);
-      const h = Math.abs(b.y - a.y);
-      ctx.beginPath();
-      if (s.tool === "square") {
-        ctx.rect(x, y, w, h);
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = s.lineWidth;
+      if (s.tool === "eraser") {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = BOARD_BG;
+        ctx.fillStyle = BOARD_BG;
       } else {
-        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = s.color;
+        ctx.fillStyle = s.color;
       }
-      ctx.stroke();
-      ctx.restore();
-      return;
-    }
 
-    ctx.beginPath();
-    ctx.moveTo(p[0].x, p[0].y);
-    for (let i = 1; i < p.length - 1; i++) {
-      const xc = (p[i].x + p[i + 1].x) / 2;
-      const yc = (p[i].y + p[i + 1].y) / 2;
-      ctx.quadraticCurveTo(p[i].x, p[i].y, xc, yc);
-    }
-    ctx.lineTo(p[p.length - 1].x, p[p.length - 1].y);
-    ctx.stroke();
-    ctx.restore();
-  }, []);
+      if (p.length === 1) {
+        ctx.beginPath();
+        ctx.arc(p[0].x, p[0].y, s.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
 
-  // Paints only the most recently added segment of the in-progress stroke.
-  const paintLastSegment = useCallback((ctx: CanvasRenderingContext2D, s: Stroke) => {
-    const p = s.points;
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = s.lineWidth;
-    if (s.tool === "eraser") {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = BOARD_BG;
-      ctx.fillStyle = BOARD_BG;
-    } else {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = s.color;
-      ctx.fillStyle = s.color;
-    }
+      if (s.tool === "square" || s.tool === "circle") {
+        const a = p[0];
+        const b = p[p.length - 1];
+        const x = Math.min(a.x, b.x);
+        const y = Math.min(a.y, b.y);
+        const w = Math.abs(b.x - a.x);
+        const h = Math.abs(b.y - a.y);
+        ctx.beginPath();
+        if (s.tool === "square") {
+          ctx.rect(x, y, w, h);
+        } else {
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        }
+        ctx.stroke();
+        ctx.restore();
+        return;
+      }
 
-    if (p.length === 1) {
-      ctx.beginPath();
-      ctx.arc(p[0].x, p[0].y, s.lineWidth / 2, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (p.length === 2) {
       ctx.beginPath();
       ctx.moveTo(p[0].x, p[0].y);
-      ctx.lineTo(p[1].x, p[1].y);
+      for (let i = 1; i < p.length - 1; i++) {
+        const xc = (p[i].x + p[i + 1].x) / 2;
+        const yc = (p[i].y + p[i + 1].y) / 2;
+        ctx.quadraticCurveTo(p[i].x, p[i].y, xc, yc);
+      }
+      ctx.lineTo(p[p.length - 1].x, p[p.length - 1].y);
       ctx.stroke();
-    } else {
-      const n = p.length;
-      const mPrev = { x: (p[n - 3].x + p[n - 2].x) / 2, y: (p[n - 3].y + p[n - 2].y) / 2 };
-      const mNew = { x: (p[n - 2].x + p[n - 1].x) / 2, y: (p[n - 2].y + p[n - 1].y) / 2 };
-      ctx.beginPath();
-      ctx.moveTo(mPrev.x, mPrev.y);
-      ctx.quadraticCurveTo(p[n - 2].x, p[n - 2].y, mNew.x, mNew.y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }, []);
+      ctx.restore();
+    },
+    [],
+  );
+
+  // Paints only the most recently added segment of the in-progress stroke.
+  const paintLastSegment = useCallback(
+    (ctx: CanvasRenderingContext2D, s: Stroke) => {
+      const p = s.points;
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = s.lineWidth;
+      if (s.tool === "eraser") {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = BOARD_BG;
+        ctx.fillStyle = BOARD_BG;
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = s.color;
+        ctx.fillStyle = s.color;
+      }
+
+      if (p.length === 1) {
+        ctx.beginPath();
+        ctx.arc(p[0].x, p[0].y, s.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.length === 2) {
+        ctx.beginPath();
+        ctx.moveTo(p[0].x, p[0].y);
+        ctx.lineTo(p[1].x, p[1].y);
+        ctx.stroke();
+      } else {
+        const n = p.length;
+        const mPrev = {
+          x: (p[n - 3].x + p[n - 2].x) / 2,
+          y: (p[n - 3].y + p[n - 2].y) / 2,
+        };
+        const mNew = {
+          x: (p[n - 2].x + p[n - 1].x) / 2,
+          y: (p[n - 2].y + p[n - 1].y) / 2,
+        };
+        ctx.beginPath();
+        ctx.moveTo(mPrev.x, mPrev.y);
+        ctx.quadraticCurveTo(p[n - 2].x, p[n - 2].y, mNew.x, mNew.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+    [],
+  );
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -155,7 +175,9 @@ export default function Home() {
     ctx.fillStyle = BOARD_BG;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
-    const all = currentRef.current ? [...strokesRef.current, currentRef.current] : strokesRef.current;
+    const all = currentRef.current
+      ? [...strokesRef.current, currentRef.current]
+      : strokesRef.current;
     for (const s of all) renderStroke(ctx, s);
   }, [renderStroke]);
 
@@ -236,7 +258,8 @@ export default function Home() {
   const onPointerUp = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
-      if (canvas?.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      if (canvas?.hasPointerCapture(e.pointerId))
+        canvas.releasePointerCapture(e.pointerId);
       endStroke();
     },
     [endStroke],
@@ -245,7 +268,8 @@ export default function Home() {
   const onPointerCancel = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
-      if (canvas?.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      if (canvas?.hasPointerCapture(e.pointerId))
+        canvas.releasePointerCapture(e.pointerId);
       endStroke();
     },
     [endStroke],
@@ -343,7 +367,9 @@ export default function Home() {
               if (tool === "eraser") setTool("pen");
             }}
             className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
-              color === c && tool !== "eraser" ? "border-zinc-900 dark:border-white" : "border-transparent"
+              color === c && tool !== "eraser"
+                ? "border-zinc-900 dark:border-white"
+                : "border-transparent"
             }`}
             style={{ backgroundColor: c }}
             aria-label={`Color ${c}`}
@@ -352,26 +378,20 @@ export default function Home() {
 
         <div className="mx-2 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
 
-        {LINE_WIDTHS.map((w) => (
-          <button
-            key={w}
-            onClick={() => setLineWidth(w)}
-            className={`flex items-center justify-center rounded-lg transition-colors ${
-              lineWidth === w ? "bg-zinc-900 dark:bg-white" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            }`}
-            style={{ width: 32, height: 32 }}
-            aria-label={`Line width ${w}`}
-          >
-            <div
-              className="rounded-full"
-              style={{
-                width: w + 4,
-                height: w + 4,
-                backgroundColor: lineWidth === w ? "white" : "currentColor",
-              }}
-            />
-          </button>
-        ))}
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min={1}
+            max={40}
+            value={lineWidth}
+            onChange={(e) => setLineWidth(Number(e.target.value))}
+            className="h-1.5 w-24 cursor-pointer appearance-none rounded-full bg-zinc-200 accent-zinc-900 dark:bg-zinc-700 dark:accent-white"
+            aria-label="Line width"
+          />
+          <span className="w-6 text-center text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+            {lineWidth}
+          </span>
+        </div>
 
         <div className="mx-2 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
 
