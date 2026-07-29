@@ -8,7 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 
-type Tool = "pen" | "pencil" | "eraser";
+type Tool = "pen" | "pencil" | "eraser" | "square" | "circle";
 type Point = { x: number; y: number };
 type Stroke = { tool: Tool; color: string; lineWidth: number; points: Point[] };
 
@@ -72,6 +72,24 @@ export default function Home() {
       ctx.beginPath();
       ctx.arc(p[0].x, p[0].y, s.lineWidth / 2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (s.tool === "square" || s.tool === "circle") {
+      const a = p[0];
+      const b = p[p.length - 1];
+      const x = Math.min(a.x, b.x);
+      const y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x);
+      const h = Math.abs(b.y - a.y);
+      ctx.beginPath();
+      if (s.tool === "square") {
+        ctx.rect(x, y, w, h);
+      } else {
+        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+      }
+      ctx.stroke();
       ctx.restore();
       return;
     }
@@ -186,8 +204,14 @@ export default function Home() {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (!ctx || !currentRef.current) return;
-      currentRef.current.points.push(getPos(e));
-      paintLastSegment(ctx, currentRef.current);
+      const t = currentRef.current.tool;
+      if (t === "square" || t === "circle") {
+        currentRef.current.points = [currentRef.current.points[0], getPos(e)];
+        redraw();
+      } else {
+        currentRef.current.points.push(getPos(e));
+        paintLastSegment(ctx, currentRef.current);
+      }
     },
     [getPos, paintLastSegment],
   );
@@ -287,6 +311,26 @@ export default function Home() {
           }`}
         >
           Eraser
+        </button>
+        <button
+          onClick={() => setTool("square")}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            tool === "square"
+              ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }`}
+        >
+          Square
+        </button>
+        <button
+          onClick={() => setTool("circle")}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            tool === "circle"
+              ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }`}
+        >
+          Circle
         </button>
 
         <div className="mx-2 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
