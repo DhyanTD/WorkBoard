@@ -8,7 +8,7 @@ import {
   type PointerEvent,
 } from "react";
 
-type Tool = "pen" | "pencil" | "eraser" | "square" | "circle";
+type Tool = "pen" | "pencil" | "eraser" | "square" | "circle" | "hand";
 type Point = { x: number; y: number };
 type Stroke = { tool: Tool; color: string; lineWidth: number; points: Point[] };
 
@@ -22,6 +22,7 @@ const COLORS = [
   "#8b5cf6",
   "#ec4899",
 ];
+const GRID_SIZE = 40;
 const BOARD_BG = "#ffffff";
 
 export default function Home() {
@@ -36,8 +37,14 @@ export default function Home() {
   const redoRef = useRef<Stroke[]>([]);
   const currentRef = useRef<Stroke | null>(null);
   const drawingRef = useRef(false);
+  const panningRef = useRef(false);
 
-  // Refs mirror the toolbar state so pointer handlers never read stale values.
+  // Camera offset in world space (negative of what translate uses).
+  // (0,0) in world maps to (-offset.x, -offset.y) on screen.
+  const offsetRef = useRef<Point>({ x: 0, y: 0 });
+  const panStartRef = useRef<Point>({ x: 0, y: 0 });
+  const offsetStartRef = useRef<Point>({ x: 0, y: 0 });
+
   const toolRef = useRef(tool);
   const colorRef = useRef(color);
   const lineWidthRef = useRef(lineWidth);
@@ -51,12 +58,24 @@ export default function Home() {
     lineWidthRef.current = lineWidth;
   }, [lineWidth]);
 
-  const getPos = useCallback((e: PointerEvent<HTMLCanvasElement>): Point => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }, []);
+  // Convert screen coords to world coords.
+  const screenToWorld = useCallback(
+    (screen: Point): Point => ({
+      x: screen.x - offsetRef.current.x,
+      y: screen.y - offsetRef.current.y,
+    }),
+    [],
+  );
+
+  const getScreenPos = useCallback(
+    (e: PointerEvent<HTMLCanvasElement>): Point => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    },
+    [],
+  );
 
   const renderStroke = useCallback(
     (ctx: CanvasRenderingContext2D, s: Stroke) => {
@@ -117,7 +136,6 @@ export default function Home() {
     [],
   );
 
-  // Paints only the most recently added segment of the in-progress stroke.
   const paintLastSegment = useCallback(
     (ctx: CanvasRenderingContext2D, s: Stroke) => {
       const p = s.points;
@@ -164,22 +182,61 @@ export default function Home() {
     [],
   );
 
+  const drawGrid = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+      const ox = ((offsetRef.current.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+      const oy = ((offsetRef.current.y % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+      ctx.fillStyle = "#e5e7eb";
+      for (let x = ox; x < w; x += GRID_SIZE) {
+        for (let y = oy; y < h; y += GRID_SIZE) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    },
+    [],
+  );
+
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = rect.width;
+    const h = rect.height;
+
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = BOARD_BG;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
+
+    // Draw grid in screen space (shifted by camera offset)
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawGrid(ctx, w, h);
+    ctx.restore();
+
+    // Draw strokes in world space
+    ctx.save();
+    ctx.setTransform(
+      dpr,
+      0,
+      0,
+      dpr,
+      offsetRef.current.x * dpr,
+      offsetRef.current.y * dpr,
+    );
     const all = currentRef.current
       ? [...strokesRef.current, currentRef.current]
       : strokesRef.current;
     for (const s of all) renderStroke(ctx, s);
-  }, [renderStroke]);
+    ctx.restore();
+  }, [renderStroke, drawGrid]);
 
   const resize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -188,9 +245,6 @@ export default function Home() {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     redraw();
   }, [redraw]);
 
@@ -205,37 +259,74 @@ export default function Home() {
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
+      const ctrlKey = e.ctrlKey || e.metaKey;
+
       canvas.setPointerCapture(e.pointerId);
+
+      // If holding Ctrl or using hand tool, start panning
+      if (ctrlKey || toolRef.current === "hand") {
+        panningRef.current = true;
+        panStartRef.current = getScreenPos(e);
+        offsetStartRef.current = { ...offsetRef.current };
+        return;
+      }
+
       drawingRef.current = true;
       redoRef.current = [];
+      const world = screenToWorld(getScreenPos(e));
       currentRef.current = {
         tool: toolRef.current,
         color: colorRef.current,
         lineWidth: lineWidthRef.current,
-        points: [getPos(e)],
+        points: [world],
       };
       redraw();
     },
-    [getPos, redraw],
+    [getScreenPos, screenToWorld, redraw],
   );
 
   const onPointerMove = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
-      if (!drawingRef.current || !currentRef.current) return;
       e.preventDefault();
+      if (panningRef.current) {
+        const current = getScreenPos(e);
+        offsetRef.current = {
+          x: offsetStartRef.current.x + (current.x - panStartRef.current.x),
+          y: offsetStartRef.current.y + (current.y - panStartRef.current.y),
+        };
+        redraw();
+        return;
+      }
+      if (!drawingRef.current || !currentRef.current) return;
+
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (!ctx || !currentRef.current) return;
+
       const t = currentRef.current.tool;
+      const world = screenToWorld(getScreenPos(e));
+
       if (t === "square" || t === "circle") {
-        currentRef.current.points = [currentRef.current.points[0], getPos(e)];
+        currentRef.current.points = [currentRef.current.points[0], world];
         redraw();
       } else {
-        currentRef.current.points.push(getPos(e));
+        currentRef.current.points.push(world);
+        // Paint in world space
+        ctx.save();
+        const dpr = window.devicePixelRatio || 1;
+        ctx.setTransform(
+          dpr,
+          0,
+          0,
+          dpr,
+          offsetRef.current.x * dpr,
+          offsetRef.current.y * dpr,
+        );
         paintLastSegment(ctx, currentRef.current);
+        ctx.restore();
       }
     },
-    [getPos, paintLastSegment],
+    [getScreenPos, screenToWorld, paintLastSegment, redraw],
   );
 
   const syncFlags = useCallback(() => {
@@ -244,7 +335,11 @@ export default function Home() {
   }, []);
 
   const endStroke = useCallback(() => {
-    if (!drawingRef.current) return;
+    if (!drawingRef.current && !panningRef.current) return;
+    if (panningRef.current) {
+      panningRef.current = false;
+      return;
+    }
     drawingRef.current = false;
     if (currentRef.current && currentRef.current.points.length > 0) {
       strokesRef.current = [...strokesRef.current, currentRef.current];
@@ -275,6 +370,19 @@ export default function Home() {
     [endStroke],
   );
 
+  // Wheel to pan (trackpad or mouse wheel)
+  const onWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      offsetRef.current = {
+        x: offsetRef.current.x - e.deltaX,
+        y: offsetRef.current.y - e.deltaY,
+      };
+      redraw();
+    },
+    [redraw],
+  );
+
   const undo = useCallback(() => {
     if (strokesRef.current.length === 0) return;
     const last = strokesRef.current[strokesRef.current.length - 1];
@@ -298,14 +406,34 @@ export default function Home() {
     redoRef.current = [];
     currentRef.current = null;
     drawingRef.current = false;
+    panningRef.current = false;
+    offsetRef.current = { x: 0, y: 0 };
     redraw();
     syncFlags();
   }, [redraw, syncFlags]);
+
+  const resetView = useCallback(() => {
+    offsetRef.current = { x: 0, y: 0 };
+    redraw();
+  }, [redraw]);
 
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
       <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+        <button
+          onClick={() => setTool("hand")}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            tool === "hand"
+              ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+              : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          }`}
+        >
+          Hand
+        </button>
+
+        <div className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
+
         <button
           onClick={() => setTool("pen")}
           className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -364,10 +492,10 @@ export default function Home() {
             key={c}
             onClick={() => {
               setColor(c);
-              if (tool === "eraser") setTool("pen");
+              if (tool === "eraser" || tool === "hand") setTool("pen");
             }}
             className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
-              color === c && tool !== "eraser"
+              color === c && tool !== "eraser" && tool !== "hand"
                 ? "border-zinc-900 dark:border-white"
                 : "border-transparent"
             }`}
@@ -410,6 +538,12 @@ export default function Home() {
           Redo
         </button>
         <button
+          onClick={resetView}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+        >
+          Reset View
+        </button>
+        <button
           onClick={clearCanvas}
           className="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
         >
@@ -421,11 +555,13 @@ export default function Home() {
       <div className="relative flex-1 overflow-hidden">
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 h-full w-full cursor-crosshair touch-none select-none"
+          className="absolute inset-0 h-full w-full touch-none select-none"
+          style={{ cursor: tool === "hand" ? "grab" : "crosshair" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
+          onWheel={onWheel}
         />
       </div>
     </div>
