@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type PointerEvent } from "react";
-import {
-  camera,
-  useBoardStore,
-} from "@/store/useBoardStore";
+import { camera, useBoardStore } from "@/store/useBoardStore";
 import {
   drawGrid,
   isShapeTool,
@@ -95,8 +92,8 @@ export default function BoardCanvas() {
       0,
       0,
       dpr * scale,
-      offset.x * dpr * scale,
-      offset.y * dpr * scale,
+      -offset.x * dpr * scale,
+      -offset.y * dpr * scale,
     );
     const all = currentRef.current
       ? [...strokesRef.current, currentRef.current]
@@ -150,7 +147,11 @@ export default function BoardCanvas() {
       }
 
       drawingRef.current = true;
-      const world = screenToWorld(camera.offset, scaleRef.current, getScreenPos(e));
+      const world = screenToWorld(
+        camera.offset,
+        scaleRef.current,
+        getScreenPos(e),
+      );
       currentRef.current = {
         tool: toolRef.current,
         color: colorRef.current,
@@ -168,8 +169,12 @@ export default function BoardCanvas() {
       if (panningRef.current) {
         const current = getScreenPos(e);
         camera.offset = {
-          x: offsetStartRef.current.x + (current.x - panStartRef.current.x) / scaleRef.current,
-          y: offsetStartRef.current.y + (current.y - panStartRef.current.y) / scaleRef.current,
+          x:
+            offsetStartRef.current.x -
+            (current.x - panStartRef.current.x) / scaleRef.current,
+          y:
+            offsetStartRef.current.y -
+            (current.y - panStartRef.current.y) / scaleRef.current,
         };
         redraw();
         return;
@@ -181,7 +186,11 @@ export default function BoardCanvas() {
       if (!ctx || !currentRef.current) return;
 
       const t = currentRef.current.tool;
-      const world = screenToWorld(camera.offset, scaleRef.current, getScreenPos(e));
+      const world = screenToWorld(
+        camera.offset,
+        scaleRef.current,
+        getScreenPos(e),
+      );
 
       if (isShapeTool(t)) {
         currentRef.current.points = [currentRef.current.points[0], world];
@@ -197,8 +206,8 @@ export default function BoardCanvas() {
           0,
           0,
           dpr * scale,
-          camera.offset.x * dpr * scale,
-          camera.offset.y * dpr * scale,
+          -camera.offset.x * dpr * scale,
+          -camera.offset.y * dpr * scale,
         );
         paintLastSegment(ctx, currentRef.current);
         ctx.restore();
@@ -250,8 +259,8 @@ export default function BoardCanvas() {
         useBoardStore.getState().zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, anchor);
       } else {
         camera.offset = {
-          x: camera.offset.x - e.deltaX / scaleRef.current,
-          y: camera.offset.y - e.deltaY / scaleRef.current,
+          x: camera.offset.x + e.deltaX / scaleRef.current,
+          y: camera.offset.y + e.deltaY / scaleRef.current,
         };
         redraw();
       }
