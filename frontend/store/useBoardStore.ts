@@ -1,13 +1,30 @@
 "use client";
 
 import { create } from "zustand";
-import type { Stroke, Tool } from "@/lib/board";
+import {
+  MAX_ZOOM,
+  MIN_ZOOM,
+  zoomAt,
+  type Point,
+  type Stroke,
+  type Tool,
+} from "@/lib/board";
 
-/** Camera offset in world space (negative of what translate uses). Stored as
- *  mutable module state because panning fires at pointer-move rate; the Canvas
- *  mutates it directly and the store only bumps `cameraEpoch` to signal a
- *  redraw (e.g. Reset View). */
-export const camera = { offset: { x: 0, y: 0 } };
+/**
+ * Camera state. `offset` is the world-space coordinate at the top-left of the
+ * viewport; `scale` converts world -> screen. Stored as mutable module state
+ * because panning fires at pointer-move rate; the Canvas mutates it directly
+ * and the store only bumps `cameraEpoch` to signal a redraw (e.g. Reset View).
+ * `scale` is also mirrored as reactive state so the toolbar can render it.
+ */
+export const camera = {
+  offset: { x: 0, y: 0 },
+  scale: 1,
+  /** Viewport size in CSS pixels, maintained by the Canvas on resize. */
+  viewport: { w: 0, h: 0 },
+};
+
+const clampScale = (s: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, s));
 
 type BoardState = {
   tool: Tool;
@@ -19,6 +36,8 @@ type BoardState = {
   canRedo: boolean;
   /** Incremented whenever the camera must be re-rendered (Reset View). */
   cameraEpoch: number;
+  /** Reactive mirror of `camera.scale` so the toolbar can display it. */
+  scale: number;
 
   setTool: (tool: Tool) => void;
   setColor: (color: string) => void;
@@ -28,6 +47,10 @@ type BoardState = {
   redo: () => void;
   clear: () => void;
   resetView: () => void;
+  /** Multiply current scale by `factor`, anchored at the given screen point. */
+  zoomBy: (factor: number, anchor: Point) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
 };
 
 export const useBoardStore = create<BoardState>()((set) => ({
@@ -39,6 +62,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
   canUndo: false,
   canRedo: false,
   cameraEpoch: 0,
+  scale: 1,
 
   setTool: (tool) => set({ tool }),
   setColor: (color) => set({ color }),
@@ -86,6 +110,31 @@ export const useBoardStore = create<BoardState>()((set) => ({
 
   resetView: () => {
     camera.offset = { x: 0, y: 0 };
-    set((s) => ({ cameraEpoch: s.cameraEpoch + 1 }));
+    camera.scale = 1;
+    set((s) => ({ cameraEpoch: s.cameraEpoch + 1, scale: 1 }));
+  },
+
+  zoomBy: (factor, anchor) => {
+    const next = clampScale(camera.scale * factor);
+    if (next === camera.scale) return;
+    camera.offset = zoomAt(camera.offset, camera.scale, next, anchor);
+    camera.scale = next;
+    set((s) => ({ cameraEpoch: s.cameraEpoch + 1, scale: next }));
+  },
+
+  zoomIn: () => {
+    const anchor: Point = {
+      x: camera.viewport.w / 2,
+      y: camera.viewport.h / 2,
+    };
+    useBoardStore.getState().zoomBy(1.2, anchor);
+  },
+
+  zoomOut: () => {
+    const anchor: Point = {
+      x: camera.viewport.w / 2,
+      y: camera.viewport.h / 2,
+    };
+    useBoardStore.getState().zoomBy(1 / 1.2, anchor);
   },
 }));

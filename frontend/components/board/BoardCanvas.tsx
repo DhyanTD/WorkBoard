@@ -28,9 +28,11 @@ export default function BoardCanvas() {
   const toolRef = useRef(tool);
   const colorRef = useRef("#000000");
   const lineWidthRef = useRef(4);
+  const scaleRef = useRef(1);
 
   const color = useBoardStore((s) => s.color);
   const lineWidth = useBoardStore((s) => s.lineWidth);
+  const scale = useBoardStore((s) => s.scale);
   useEffect(() => {
     toolRef.current = tool;
   }, [tool]);
@@ -40,6 +42,9 @@ export default function BoardCanvas() {
   useEffect(() => {
     lineWidthRef.current = lineWidth;
   }, [lineWidth]);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
 
   // Imperative draw/pan state.
   const strokesRef = useRef(strokes);
@@ -50,7 +55,7 @@ export default function BoardCanvas() {
   const offsetStartRef = useRef<Point>({ x: 0, y: 0 });
 
   const getScreenPos = useCallback(
-    (e: PointerEvent<HTMLCanvasElement>): Point => {
+    (e: { clientX: number; clientY: number }): Point => {
       const canvas = canvasRef.current;
       if (!canvas) return { x: 0, y: 0 };
       const rect = canvas.getBoundingClientRect();
@@ -68,7 +73,7 @@ export default function BoardCanvas() {
     const dpr = window.devicePixelRatio || 1;
     const w = rect.width;
     const h = rect.height;
-    const { offset } = camera;
+    const { offset, scale } = camera;
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -77,21 +82,21 @@ export default function BoardCanvas() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Grid in screen space (shifted by camera offset).
+    // Grid in screen space (shifted by camera offset, scaled by zoom).
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawGrid(ctx, w, h, offset);
+    drawGrid(ctx, w, h, offset, scale);
     ctx.restore();
 
     // Strokes in world space.
     ctx.save();
     ctx.setTransform(
-      dpr,
+      dpr * scale,
       0,
       0,
-      dpr,
-      offset.x * dpr,
-      offset.y * dpr,
+      dpr * scale,
+      offset.x * dpr * scale,
+      offset.y * dpr * scale,
     );
     const all = currentRef.current
       ? [...strokesRef.current, currentRef.current]
@@ -114,6 +119,8 @@ export default function BoardCanvas() {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
+    camera.viewport.w = rect.width;
+    camera.viewport.h = rect.height;
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
     redraw();
@@ -143,7 +150,7 @@ export default function BoardCanvas() {
       }
 
       drawingRef.current = true;
-      const world = screenToWorld(camera.offset, getScreenPos(e));
+      const world = screenToWorld(camera.offset, scaleRef.current, getScreenPos(e));
       currentRef.current = {
         tool: toolRef.current,
         color: colorRef.current,
@@ -161,8 +168,8 @@ export default function BoardCanvas() {
       if (panningRef.current) {
         const current = getScreenPos(e);
         camera.offset = {
-          x: offsetStartRef.current.x + (current.x - panStartRef.current.x),
-          y: offsetStartRef.current.y + (current.y - panStartRef.current.y),
+          x: offsetStartRef.current.x + (current.x - panStartRef.current.x) / scaleRef.current,
+          y: offsetStartRef.current.y + (current.y - panStartRef.current.y) / scaleRef.current,
         };
         redraw();
         return;
@@ -174,23 +181,24 @@ export default function BoardCanvas() {
       if (!ctx || !currentRef.current) return;
 
       const t = currentRef.current.tool;
-      const world = screenToWorld(camera.offset, getScreenPos(e));
+      const world = screenToWorld(camera.offset, scaleRef.current, getScreenPos(e));
 
       if (isShapeTool(t)) {
         currentRef.current.points = [currentRef.current.points[0], world];
         redraw();
       } else {
         currentRef.current.points.push(world);
-        // Paint in world space.
+        // Paint in world space (scaled by zoom).
         ctx.save();
         const dpr = window.devicePixelRatio || 1;
+        const { scale } = camera;
         ctx.setTransform(
-          dpr,
+          dpr * scale,
           0,
           0,
-          dpr,
-          camera.offset.x * dpr,
-          camera.offset.y * dpr,
+          dpr * scale,
+          camera.offset.x * dpr * scale,
+          camera.offset.y * dpr * scale,
         );
         paintLastSegment(ctx, currentRef.current);
         ctx.restore();
@@ -233,17 +241,22 @@ export default function BoardCanvas() {
     [endStroke],
   );
 
-  // Wheel pans (trackpad or mouse wheel).
+  // Wheel pans (trackpad or mouse wheel); Ctrl/Cmd+wheel zooms at the cursor.
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
-      camera.offset = {
-        x: camera.offset.x - e.deltaX,
-        y: camera.offset.y - e.deltaY,
-      };
-      redraw();
+      if (e.ctrlKey || e.metaKey) {
+        const anchor = getScreenPos(e);
+        useBoardStore.getState().zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, anchor);
+      } else {
+        camera.offset = {
+          x: camera.offset.x - e.deltaX / scaleRef.current,
+          y: camera.offset.y - e.deltaY / scaleRef.current,
+        };
+        redraw();
+      }
     },
-    [redraw],
+    [getScreenPos, redraw],
   );
 
   return (

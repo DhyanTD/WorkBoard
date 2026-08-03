@@ -27,6 +27,13 @@ export const COLORS = [
 export const GRID_SIZE = 40;
 export const BOARD_BG = "#ffffff";
 
+/** World-space width a single screen-space grid cell represents at zoom 1. */
+export const GRID_WORLD_SIZE = GRID_SIZE;
+
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 4;
+export const ZOOM_STEP = 1.2;
+
 export const isShapeTool = (tool: Tool) =>
   tool === "square" || tool === "circle";
 
@@ -37,10 +44,36 @@ export const isDrawingTool = (tool: Tool) =>
   tool === "square" ||
   tool === "circle";
 
-export const screenToWorld = (offset: Point, screen: Point): Point => ({
-  x: screen.x - offset.x,
-  y: screen.y - offset.y,
+/**
+ * Maps a screen-space point to world space. `offset` is the world-space
+ * coordinate at the top-left of the viewport; `scale` scales world -> screen.
+ */
+export const screenToWorld = (
+  offset: Point,
+  scale: number,
+  screen: Point,
+): Point => ({
+  x: offset.x + screen.x / scale,
+  y: offset.y + screen.y / scale,
 });
+
+/**
+ * Adjusts the camera so `anchor` (a screen point) stays fixed while scale
+ * changes: the world point under the anchor keeps aligning with the anchor.
+ * Returns the new offset for the given new scale.
+ */
+export const zoomAt = (
+  offset: Point,
+  oldScale: number,
+  newScale: number,
+  anchor: Point,
+): Point => {
+  const world = screenToWorld(offset, oldScale, anchor);
+  return {
+    x: world.x - anchor.x / newScale,
+    y: world.y - anchor.y / newScale,
+  };
+};
 
 /** Sets up stroke/fill style for the given stroke (eraser paints board bg). */
 const applyStrokeStyle = (ctx: CanvasRenderingContext2D, s: Stroke) => {
@@ -134,20 +167,31 @@ export const paintLastSegment = (
   ctx.restore();
 };
 
-/** Draws the dot grid in screen space, shifted by the camera offset. */
+/**
+ * Draws the dot grid. Grid dots live in world space at GRID_SIZE intervals;
+ * `offset` is the world-space top-left of the viewport and `scale` converts
+ * world -> screen, so dots sit on the world grid regardless of zoom/pan.
+ */
 export const drawGrid = (
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   offset: Point,
+  scale: number,
 ) => {
-  const ox = ((offset.x % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
-  const oy = ((offset.y % GRID_SIZE) + GRID_SIZE) % GRID_SIZE;
+  const cell = GRID_SIZE * scale;
+  if (cell < 8) return; // Too dense below ~8px spacing.
+  const worldX0 = offset.x;
+  const worldY0 = offset.y;
+  const worldX1 = offset.x + w / scale;
+  const worldY1 = offset.y + h / scale;
+  const x0 = Math.floor(worldX0 / GRID_SIZE) * GRID_SIZE;
+  const y0 = Math.floor(worldY0 / GRID_SIZE) * GRID_SIZE;
   ctx.fillStyle = "#e5e7eb";
-  for (let x = ox; x < w; x += GRID_SIZE) {
-    for (let y = oy; y < h; y += GRID_SIZE) {
+  for (let wx = x0; wx <= worldX1; wx += GRID_SIZE) {
+    for (let wy = y0; wy <= worldY1; wy += GRID_SIZE) {
       ctx.beginPath();
-      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+      ctx.arc((wx - worldX0) * scale, (wy - worldY0) * scale, 1.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }

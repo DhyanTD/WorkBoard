@@ -2,6 +2,7 @@
 
 import Toolbar from "@/components/board/Toolbar";
 import BoardCanvas from "@/components/board/BoardCanvas";
+import ZoomControls from "@/components/board/ZoomControls";
 
 export default function Home() {
   return (
@@ -9,6 +10,7 @@ export default function Home() {
       <Toolbar />
       <div className="relative flex-1 overflow-hidden">
         <BoardCanvas />
+        <ZoomControls />
       </div>
     </div>
   );
