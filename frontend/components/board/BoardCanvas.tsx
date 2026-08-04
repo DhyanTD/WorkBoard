@@ -3,14 +3,23 @@
 import { useCallback, useEffect, useRef, type PointerEvent } from "react";
 import { camera, useBoardStore } from "@/store/useBoardStore";
 import {
+  boundsFromPoint,
+  boundsFromPoints,
   drawGrid,
+  includePoint,
   isShapeTool,
+  isStrokeVisible,
+  MAX_CANVAS_DPR,
   paintLastSegment,
   renderStroke,
   screenToWorld,
+  shouldSamplePoint,
   type Point,
   type Stroke,
 } from "@/lib/board";
+
+const getCanvasDpr = () =>
+  Math.min(window.devicePixelRatio || 1, MAX_CANVAS_DPR);
 
 export default function BoardCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,11 +34,9 @@ export default function BoardCanvas() {
   const toolRef = useRef(tool);
   const colorRef = useRef("#000000");
   const lineWidthRef = useRef(4);
-  const scaleRef = useRef(1);
 
   const color = useBoardStore((s) => s.color);
   const lineWidth = useBoardStore((s) => s.lineWidth);
-  const scale = useBoardStore((s) => s.scale);
   useEffect(() => {
     toolRef.current = tool;
   }, [tool]);
@@ -39,9 +46,6 @@ export default function BoardCanvas() {
   useEffect(() => {
     lineWidthRef.current = lineWidth;
   }, [lineWidth]);
-  useEffect(() => {
-    scaleRef.current = scale;
-  }, [scale]);
 
   // Imperative draw/pan state.
   const strokesRef = useRef(strokes);
@@ -67,10 +71,16 @@ export default function BoardCanvas() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = getCanvasDpr();
     const w = rect.width;
     const h = rect.height;
     const { offset, scale } = camera;
+    const viewport = {
+      minX: offset.x,
+      minY: offset.y,
+      maxX: offset.x + w / scale,
+      maxY: offset.y + h / scale,
+    };
 
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -95,33 +105,55 @@ export default function BoardCanvas() {
       -offset.x * dpr * scale,
       -offset.y * dpr * scale,
     );
-    const all = currentRef.current
-      ? [...strokesRef.current, currentRef.current]
-      : strokesRef.current;
-    for (const s of all) renderStroke(ctx, s);
+    for (const stroke of strokesRef.current) {
+      if (isStrokeVisible(stroke, viewport)) renderStroke(ctx, stroke);
+    }
+    const current = currentRef.current;
+    if (current && isStrokeVisible(current, viewport)) {
+      renderStroke(ctx, current);
+    }
     ctx.restore();
   }, []);
+
+  const redrawFrameRef = useRef<number | null>(null);
+  const scheduleRedraw = useCallback(() => {
+    if (redrawFrameRef.current !== null) return;
+    redrawFrameRef.current = window.requestAnimationFrame(() => {
+      redrawFrameRef.current = null;
+      redraw();
+    });
+  }, [redraw]);
+
+  useEffect(
+    () => () => {
+      if (redrawFrameRef.current !== null) {
+        window.cancelAnimationFrame(redrawFrameRef.current);
+        redrawFrameRef.current = null;
+      }
+    },
+    [],
+  );
 
   // Redraw when committed strokes / undo / redo / clear / camera reset change.
   useEffect(() => {
     strokesRef.current = strokes;
-    redraw();
-  }, [strokes, redraw]);
+    scheduleRedraw();
+  }, [strokes, scheduleRedraw]);
   useEffect(() => {
-    redraw();
-  }, [redoStack, cameraEpoch, redraw]);
+    scheduleRedraw();
+  }, [redoStack, cameraEpoch, scheduleRedraw]);
 
   const resize = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = getCanvasDpr();
     camera.viewport.w = rect.width;
     camera.viewport.h = rect.height;
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-    redraw();
-  }, [redraw]);
+    scheduleRedraw();
+  }, [scheduleRedraw]);
 
   useEffect(() => {
     resize();
@@ -147,20 +179,17 @@ export default function BoardCanvas() {
       }
 
       drawingRef.current = true;
-      const world = screenToWorld(
-        camera.offset,
-        scaleRef.current,
-        getScreenPos(e),
-      );
+      const world = screenToWorld(camera.offset, camera.scale, getScreenPos(e));
       currentRef.current = {
         tool: toolRef.current,
         color: colorRef.current,
         lineWidth: lineWidthRef.current,
         points: [world],
+        bounds: boundsFromPoint(world),
       };
-      redraw();
+      scheduleRedraw();
     },
-    [getScreenPos, redraw],
+    [getScreenPos, scheduleRedraw],
   );
 
   const onPointerMove = useCallback(
@@ -171,12 +200,12 @@ export default function BoardCanvas() {
         camera.offset = {
           x:
             offsetStartRef.current.x -
-            (current.x - panStartRef.current.x) / scaleRef.current,
+            (current.x - panStartRef.current.x) / camera.scale,
           y:
             offsetStartRef.current.y -
-            (current.y - panStartRef.current.y) / scaleRef.current,
+            (current.y - panStartRef.current.y) / camera.scale,
         };
-        redraw();
+        scheduleRedraw();
         return;
       }
       if (!drawingRef.current || !currentRef.current) return;
@@ -186,20 +215,23 @@ export default function BoardCanvas() {
       if (!ctx || !currentRef.current) return;
 
       const t = currentRef.current.tool;
-      const world = screenToWorld(
-        camera.offset,
-        scaleRef.current,
-        getScreenPos(e),
-      );
+      const world = screenToWorld(camera.offset, camera.scale, getScreenPos(e));
 
       if (isShapeTool(t)) {
-        currentRef.current.points = [currentRef.current.points[0], world];
-        redraw();
+        const first = currentRef.current.points[0];
+        currentRef.current.points = [first, world];
+        currentRef.current.bounds = boundsFromPoints(first, world);
+        scheduleRedraw();
       } else {
+        const points = currentRef.current.points;
+        if (!shouldSamplePoint(points[points.length - 1], world, camera.scale)) {
+          return;
+        }
         currentRef.current.points.push(world);
+        includePoint(currentRef.current.bounds, world);
         // Paint in world space (scaled by zoom).
         ctx.save();
-        const dpr = window.devicePixelRatio || 1;
+        const dpr = getCanvasDpr();
         const { scale } = camera;
         ctx.setTransform(
           dpr * scale,
@@ -213,7 +245,7 @@ export default function BoardCanvas() {
         ctx.restore();
       }
     },
-    [getScreenPos, redraw],
+    [getScreenPos, scheduleRedraw],
   );
 
   const endStroke = useCallback(() => {
@@ -227,8 +259,8 @@ export default function BoardCanvas() {
       commitStroke(currentRef.current);
     }
     currentRef.current = null;
-    redraw();
-  }, [commitStroke, redraw]);
+    scheduleRedraw();
+  }, [commitStroke, scheduleRedraw]);
 
   const onPointerUp = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
@@ -259,13 +291,13 @@ export default function BoardCanvas() {
         useBoardStore.getState().zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, anchor);
       } else {
         camera.offset = {
-          x: camera.offset.x + e.deltaX / scaleRef.current,
-          y: camera.offset.y + e.deltaY / scaleRef.current,
+          x: camera.offset.x + e.deltaX / camera.scale,
+          y: camera.offset.y + e.deltaY / camera.scale,
         };
-        redraw();
+        scheduleRedraw();
       }
     },
-    [getScreenPos, redraw],
+    [getScreenPos, scheduleRedraw],
   );
 
   useEffect(() => {
