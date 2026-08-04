@@ -5,7 +5,6 @@ import { camera, useBoardStore } from "@/store/useBoardStore";
 import {
   boundsFromPoint,
   boundsFromPoints,
-  drawGrid,
   includePoint,
   isShapeTool,
   isStrokeVisible,
@@ -87,12 +86,6 @@ export default function BoardCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.restore();
-
-    // Grid in screen space (shifted by camera offset, scaled by zoom).
-    ctx.save();
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawGrid(ctx, w, h, offset, scale);
     ctx.restore();
 
     // Strokes in world space.
@@ -282,7 +275,7 @@ export default function BoardCanvas() {
     [endStroke],
   );
 
-  // Wheel pans (trackpad or mouse wheel); Ctrl/Cmd+wheel zooms at the cursor.
+  // Wheel pans; Shift+wheel pans horizontally; Ctrl/Cmd+wheel zooms.
   const onWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
@@ -290,9 +283,14 @@ export default function BoardCanvas() {
         const anchor = getScreenPos(e);
         useBoardStore.getState().zoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, anchor);
       } else {
+        const horizontalDelta = e.shiftKey
+          ? Math.abs(e.deltaX) > Math.abs(e.deltaY)
+            ? e.deltaX
+            : e.deltaY
+          : e.deltaX;
         camera.offset = {
-          x: camera.offset.x + e.deltaX / camera.scale,
-          y: camera.offset.y + e.deltaY / camera.scale,
+          x: camera.offset.x + horizontalDelta / camera.scale,
+          y: camera.offset.y + (e.shiftKey ? 0 : e.deltaY) / camera.scale,
         };
         scheduleRedraw();
       }

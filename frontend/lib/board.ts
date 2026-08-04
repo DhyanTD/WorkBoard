@@ -31,11 +31,7 @@ export const COLORS = [
   "#8b5cf6",
   "#ec4899",
 ];
-export const GRID_SIZE = 40;
 export const BOARD_BG = "#ffffff";
-
-/** World-space width a single screen-space grid cell represents at zoom 1. */
-export const GRID_WORLD_SIZE = GRID_SIZE;
 
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
@@ -221,37 +217,4 @@ export const paintLastSegment = (
     ctx.stroke();
   }
   ctx.restore();
-};
-
-/**
- * Draws the dot grid. Grid dots live in world space at GRID_SIZE intervals;
- * `offset` is the world-space top-left of the viewport and `scale` converts
- * world -> screen, so dots sit on the world grid regardless of zoom/pan.
- */
-export const drawGrid = (
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  offset: Point,
-  scale: number,
-) => {
-  const cell = GRID_SIZE * scale;
-  if (cell < 8) return; // Too dense below ~8px spacing.
-  const worldX0 = offset.x;
-  const worldY0 = offset.y;
-  const worldX1 = offset.x + w / scale;
-  const worldY1 = offset.y + h / scale;
-  const x0 = Math.floor(worldX0 / GRID_SIZE) * GRID_SIZE;
-  const y0 = Math.floor(worldY0 / GRID_SIZE) * GRID_SIZE;
-  ctx.fillStyle = "#e5e7eb";
-  ctx.beginPath();
-  for (let wx = x0; wx <= worldX1; wx += GRID_SIZE) {
-    for (let wy = y0; wy <= worldY1; wy += GRID_SIZE) {
-      const x = (wx - worldX0) * scale;
-      const y = (wy - worldY0) * scale;
-      ctx.moveTo(x + 1.5, y);
-      ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-    }
-  }
-  ctx.fill();
 };
