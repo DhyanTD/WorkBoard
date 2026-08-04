@@ -4,6 +4,7 @@ import { create } from "zustand";
 import {
   MAX_ZOOM,
   MIN_ZOOM,
+  splitFreehandStrokeByEraser,
   zoomAt,
   type Point,
   type Stroke,
@@ -26,12 +27,57 @@ export const camera = {
 
 const clampScale = (s: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, s));
 
+type EraseChange = {
+  index: number;
+  before: Stroke;
+  after: Stroke[];
+};
+
+type HistoryEntry = {
+  kind: "add" | "remove";
+  index: number;
+  stroke: Stroke;
+} | {
+  kind: "erase";
+  eraser: Stroke;
+  changes: EraseChange[];
+};
+
+const undoErase = (strokes: Stroke[], changes: EraseChange[]) => {
+  // The visual eraser mark is always appended after the changed fragments.
+  const restored = strokes.slice(0, -1);
+  for (let index = changes.length - 1; index >= 0; index -= 1) {
+    const change = changes[index];
+    const fragmentIndex = changes
+      .slice(0, index)
+      .reduce(
+        (offset, previous) => offset + previous.after.length - 1,
+        change.index,
+      );
+    restored.splice(fragmentIndex, change.after.length, change.before);
+  }
+  return restored;
+};
+
+const redoErase = (strokes: Stroke[], entry: Extract<HistoryEntry, { kind: "erase" }>) => {
+  const erased = [...strokes];
+  let offset = 0;
+  for (const change of entry.changes) {
+    const index = change.index + offset;
+    erased.splice(index, 1, ...change.after);
+    offset += change.after.length - 1;
+  }
+  erased.push(entry.eraser);
+  return erased;
+};
+
 type BoardState = {
   tool: Tool;
   color: string;
   lineWidth: number;
   strokes: Stroke[];
-  redoStack: Stroke[];
+  undoStack: HistoryEntry[];
+  redoStack: HistoryEntry[];
   canUndo: boolean;
   canRedo: boolean;
   /** Incremented whenever the camera must be re-rendered (Reset View). */
@@ -43,6 +89,8 @@ type BoardState = {
   setColor: (color: string) => void;
   setLineWidth: (width: number) => void;
   commitStroke: (stroke: Stroke) => void;
+  eraseWithStroke: (eraser: Stroke) => void;
+  removeStrokeAt: (index: number) => void;
   undo: () => void;
   redo: () => void;
   clear: () => void;
@@ -58,6 +106,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
   color: "#000000",
   lineWidth: 4,
   strokes: [],
+  undoStack: [],
   redoStack: [],
   canUndo: false,
   canRedo: false,
@@ -71,38 +120,100 @@ export const useBoardStore = create<BoardState>()((set) => ({
   commitStroke: (stroke) =>
     set((s) => ({
       strokes: [...s.strokes, stroke],
+      undoStack: [
+        ...s.undoStack,
+        { kind: "add", index: s.strokes.length, stroke },
+      ],
       redoStack: [],
       canUndo: true,
       canRedo: false,
     })),
 
+  eraseWithStroke: (eraser) =>
+    set((s) => {
+      const changes: EraseChange[] = [];
+      const after = s.strokes.flatMap((stroke, index) => {
+        if (stroke.tool === "eraser") return [stroke];
+        const fragments = splitFreehandStrokeByEraser(stroke, eraser);
+        if (fragments.length !== 1 || fragments[0] !== stroke) {
+          changes.push({ index, before: stroke, after: fragments });
+        }
+        return fragments;
+      });
+      // Keep a white mask for existing shapes and for exact canvas rendering.
+      after.push(eraser);
+      return {
+        strokes: after,
+        undoStack: [...s.undoStack, { kind: "erase", eraser, changes }],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
+
+  removeStrokeAt: (index) =>
+    set((s) => {
+      const stroke = s.strokes[index];
+      if (!stroke) return s;
+      return {
+        strokes: [...s.strokes.slice(0, index), ...s.strokes.slice(index + 1)],
+        undoStack: [...s.undoStack, { kind: "remove", index, stroke }],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
+
   undo: () =>
     set((s) => {
-      if (s.strokes.length === 0) return s;
-      const last = s.strokes[s.strokes.length - 1];
+      const entry = s.undoStack[s.undoStack.length - 1];
+      if (!entry) return s;
+      const strokes =
+        entry.kind === "erase"
+          ? undoErase(s.strokes, entry.changes)
+          : entry.kind === "add"
+          ? [...s.strokes.slice(0, entry.index), ...s.strokes.slice(entry.index + 1)]
+          : [
+              ...s.strokes.slice(0, entry.index),
+              entry.stroke,
+              ...s.strokes.slice(entry.index),
+            ];
       return {
-        strokes: s.strokes.slice(0, -1),
-        redoStack: [...s.redoStack, last],
-        canUndo: s.strokes.length - 1 > 0,
+        strokes,
+        undoStack: s.undoStack.slice(0, -1),
+        redoStack: [...s.redoStack, entry],
+        canUndo: s.undoStack.length - 1 > 0,
         canRedo: true,
       };
     }),
 
   redo: () =>
     set((s) => {
-      if (s.redoStack.length === 0) return s;
-      const last = s.redoStack[s.redoStack.length - 1];
+      const entry = s.redoStack[s.redoStack.length - 1];
+      if (!entry) return s;
+      const strokes =
+        entry.kind === "erase"
+          ? redoErase(s.strokes, entry)
+          : entry.kind === "add"
+          ? [
+              ...s.strokes.slice(0, entry.index),
+              entry.stroke,
+              ...s.strokes.slice(entry.index),
+            ]
+          : [...s.strokes.slice(0, entry.index), ...s.strokes.slice(entry.index + 1)];
       return {
-        strokes: [...s.strokes, last],
+        strokes,
+        undoStack: [...s.undoStack, entry],
         redoStack: s.redoStack.slice(0, -1),
         canUndo: true,
-        canRedo: s.redoStack.length - 1 > 0,
+        canRedo: s.redoStack.length > 1,
       };
     }),
 
   clear: () =>
     set({
       strokes: [],
+      undoStack: [],
       redoStack: [],
       canUndo: false,
       canRedo: false,

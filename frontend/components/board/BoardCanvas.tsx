@@ -5,6 +5,7 @@ import { camera, useBoardStore } from "@/store/useBoardStore";
 import {
   boundsFromPoint,
   boundsFromPoints,
+  findTopmostStrokeAtPoint,
   includePoint,
   isShapeTool,
   isStrokeVisible,
@@ -28,6 +29,8 @@ export default function BoardCanvas() {
   const redoStack = useBoardStore((s) => s.redoStack);
   const cameraEpoch = useBoardStore((s) => s.cameraEpoch);
   const commitStroke = useBoardStore((s) => s.commitStroke);
+  const eraseWithStroke = useBoardStore((s) => s.eraseWithStroke);
+  const removeStrokeAt = useBoardStore((s) => s.removeStrokeAt);
 
   // Latest UI values for pointer handlers (avoids re-creating handlers).
   const toolRef = useRef(tool);
@@ -161,16 +164,33 @@ export default function BoardCanvas() {
       if (!canvas) return;
       const ctrlKey = e.ctrlKey || e.metaKey;
 
-      canvas.setPointerCapture(e.pointerId);
+      // Ctrl/Cmd+click while erasing removes the topmost connected stroke.
+      // This takes precedence over the modifier's usual canvas-pan behaviour.
+      if (ctrlKey && toolRef.current === "eraser") {
+        const world = screenToWorld(
+          camera.offset,
+          camera.scale,
+          getScreenPos(e),
+        );
+        const hitIndex = findTopmostStrokeAtPoint(
+          strokesRef.current,
+          world,
+          6 / camera.scale,
+        );
+        if (hitIndex !== -1) removeStrokeAt(hitIndex);
+        return;
+      }
 
       // Holding Ctrl or using the hand tool pans the canvas.
       if (ctrlKey || toolRef.current === "hand") {
+        canvas.setPointerCapture(e.pointerId);
         panningRef.current = true;
         panStartRef.current = getScreenPos(e);
         offsetStartRef.current = { ...camera.offset };
         return;
       }
 
+      canvas.setPointerCapture(e.pointerId);
       drawingRef.current = true;
       const world = screenToWorld(camera.offset, camera.scale, getScreenPos(e));
       currentRef.current = {
@@ -182,7 +202,7 @@ export default function BoardCanvas() {
       };
       scheduleRedraw();
     },
-    [getScreenPos, scheduleRedraw],
+    [getScreenPos, removeStrokeAt, scheduleRedraw],
   );
 
   const onPointerMove = useCallback(
@@ -249,11 +269,15 @@ export default function BoardCanvas() {
     if (!drawingRef.current) return;
     drawingRef.current = false;
     if (currentRef.current && currentRef.current.points.length > 0) {
-      commitStroke(currentRef.current);
+      if (currentRef.current.tool === "eraser") {
+        eraseWithStroke(currentRef.current);
+      } else {
+        commitStroke(currentRef.current);
+      }
     }
     currentRef.current = null;
     scheduleRedraw();
-  }, [commitStroke, scheduleRedraw]);
+  }, [commitStroke, eraseWithStroke, scheduleRedraw]);
 
   const onPointerUp = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
