@@ -252,7 +252,7 @@ export default function BoardCanvas() {
 
   // Wheel pans (trackpad or mouse wheel); Ctrl/Cmd+wheel zooms at the cursor.
   const onWheel = useCallback(
-    (e: React.WheelEvent) => {
+    (e: WheelEvent) => {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
         const anchor = getScreenPos(e);
@@ -268,6 +268,14 @@ export default function BoardCanvas() {
     [getScreenPos, redraw],
   );
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [onWheel]);
+
   return (
     <canvas
       ref={canvasRef}
@@ -277,7 +285,6 @@ export default function BoardCanvas() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      onWheel={onWheel}
     />
   );
 }
