@@ -11,6 +11,7 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "pen", label: "Pen" },
   { id: "pencil", label: "Pencil" },
   { id: "eraser", label: "Eraser" },
+  { id: "select", label: "Select" },
   { id: "square", label: "Square" },
   { id: "circle", label: "Circle" },
 ];
@@ -41,7 +42,7 @@ export default function Toolbar() {
   };
 
   return (
-    <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+    <div className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
       <ToolButton
         tool="hand"
         active={tool === "hand"}

@@ -2,6 +2,8 @@ export type Tool =
   | "pen"
   | "pencil"
   | "eraser"
+  | "select"
+  | "text"
   | "square"
   | "circle"
   | "hand";
@@ -19,6 +21,10 @@ export type Stroke = {
   lineWidth: number;
   points: Point[];
   bounds: Bounds;
+  /** Present only for text items. */
+  text?: string;
+  /** World-space text size, in CSS pixels at 100% zoom. */
+  fontSize?: number;
 };
 
 export const COLORS = [
@@ -40,14 +46,20 @@ export const ZOOM_STEP = 1.2;
 export const MAX_CANVAS_DPR = 2;
 /** Minimum distance between retained freehand points, in screen pixels. */
 export const POINT_SAMPLE_DISTANCE = 2;
+export const DEFAULT_TEXT_FONT_SIZE = 20;
 
 export const isShapeTool = (tool: Tool) =>
   tool === "square" || tool === "circle";
+
+export const isTextTool = (tool: Tool) => tool === "text";
+
+export const isSelectionTool = (tool: Tool) => tool === "select";
 
 export const isDrawingTool = (tool: Tool) =>
   tool === "pen" ||
   tool === "pencil" ||
   tool === "eraser" ||
+  tool === "text" ||
   tool === "square" ||
   tool === "circle";
 
@@ -63,6 +75,33 @@ export const boundsFromPoints = (a: Point, b: Point): Bounds => ({
   minY: Math.min(a.y, b.y),
   maxX: Math.max(a.x, b.x),
   maxY: Math.max(a.y, b.y),
+});
+
+/** Approximate text bounds for culling and pointer hit-testing. */
+export const boundsFromText = (
+  point: Point,
+  text: string,
+  fontSize: number,
+): Bounds => ({
+  minX: point.x,
+  minY: point.y,
+  maxX: point.x + text.length * fontSize * 0.62,
+  maxY: point.y + fontSize * 1.25,
+});
+
+/** Moves a complete canvas item without altering its shape or style. */
+export const translateStroke = (stroke: Stroke, delta: Point): Stroke => ({
+  ...stroke,
+  points: stroke.points.map((point) => ({
+    x: point.x + delta.x,
+    y: point.y + delta.y,
+  })),
+  bounds: {
+    minX: stroke.bounds.minX + delta.x,
+    minY: stroke.bounds.minY + delta.y,
+    maxX: stroke.bounds.maxX + delta.x,
+    maxY: stroke.bounds.maxY + delta.y,
+  },
 });
 
 /** Expands mutable in-progress stroke bounds without allocating per point. */
@@ -150,6 +189,8 @@ export const doesStrokeContainPoint = (
     return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
   }
 
+  if (isTextTool(stroke.tool)) return true;
+
   const points = stroke.points;
   if (points.length === 1) {
     const dx = point.x - points[0].x;
@@ -223,6 +264,7 @@ export const splitFreehandStrokeByEraser = (
 ) => {
   if (
     stroke.tool === "eraser" ||
+    isTextTool(stroke.tool) ||
     isShapeTool(stroke.tool) ||
     eraser.points.length === 0 ||
     stroke.points.length === 0 ||
@@ -336,6 +378,15 @@ export const renderStroke = (ctx: CanvasRenderingContext2D, s: Stroke) => {
 
   ctx.save();
   applyStrokeStyle(ctx, s);
+
+  if (isTextTool(s.tool)) {
+    const fontSize = s.fontSize ?? 20;
+    ctx.font = `${fontSize}px Arial, sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.fillText(s.text ?? "", p[0].x, p[0].y);
+    ctx.restore();
+    return;
+  }
 
   if (p.length === 1) {
     ctx.beginPath();

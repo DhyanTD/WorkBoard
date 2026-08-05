@@ -41,6 +41,11 @@ type HistoryEntry = {
   kind: "erase";
   eraser: Stroke;
   changes: EraseChange[];
+} | {
+  kind: "replace";
+  index: number;
+  before: Stroke;
+  after: Stroke;
 };
 
 const undoErase = (strokes: Stroke[], changes: EraseChange[]) => {
@@ -91,6 +96,7 @@ type BoardState = {
   commitStroke: (stroke: Stroke) => void;
   eraseWithStroke: (eraser: Stroke) => void;
   removeStrokeAt: (index: number) => void;
+  replaceStrokeAt: (index: number, stroke: Stroke) => void;
   undo: () => void;
   redo: () => void;
   clear: () => void;
@@ -164,6 +170,23 @@ export const useBoardStore = create<BoardState>()((set) => ({
       };
     }),
 
+  replaceStrokeAt: (index, after) =>
+    set((s) => {
+      const before = s.strokes[index];
+      if (!before) return s;
+      return {
+        strokes: [
+          ...s.strokes.slice(0, index),
+          after,
+          ...s.strokes.slice(index + 1),
+        ],
+        undoStack: [...s.undoStack, { kind: "replace", index, before, after }],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
+
   undo: () =>
     set((s) => {
       const entry = s.undoStack[s.undoStack.length - 1];
@@ -171,6 +194,12 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? undoErase(s.strokes, entry.changes)
+          : entry.kind === "replace"
+          ? [
+              ...s.strokes.slice(0, entry.index),
+              entry.before,
+              ...s.strokes.slice(entry.index + 1),
+            ]
           : entry.kind === "add"
           ? [...s.strokes.slice(0, entry.index), ...s.strokes.slice(entry.index + 1)]
           : [
@@ -194,6 +223,12 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? redoErase(s.strokes, entry)
+          : entry.kind === "replace"
+          ? [
+              ...s.strokes.slice(0, entry.index),
+              entry.after,
+              ...s.strokes.slice(entry.index + 1),
+            ]
           : entry.kind === "add"
           ? [
               ...s.strokes.slice(0, entry.index),
