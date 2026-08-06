@@ -229,6 +229,100 @@ export const findTopmostStrokeAtPoint = (
   return -1;
 };
 
+/**
+ * Returns whether a point lands on the visible outline of a shape. Selection
+ * uses this instead of the filled hit area so the empty interior stays
+ * available for actions such as placing text.
+ */
+const doesShapeOutlineContainPoint = (
+  stroke: Stroke,
+  point: Point,
+  hitPadding: number,
+) => {
+  const hitRadius = stroke.lineWidth / 2 + hitPadding;
+  const { minX, minY, maxX, maxY } = stroke.bounds;
+
+  if (
+    point.x < minX - hitRadius ||
+    point.x > maxX + hitRadius ||
+    point.y < minY - hitRadius ||
+    point.y > maxY + hitRadius
+  ) {
+    return false;
+  }
+
+  const start = stroke.points[0];
+  const end = stroke.points[stroke.points.length - 1];
+  const maxDistanceSquared = hitRadius * hitRadius;
+
+  if (stroke.tool === "square") {
+    const topLeft = { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y) };
+    const bottomRight = { x: Math.max(start.x, end.x), y: Math.max(start.y, end.y) };
+    const topRight = { x: bottomRight.x, y: topLeft.y };
+    const bottomLeft = { x: topLeft.x, y: bottomRight.y };
+    return [
+      [topLeft, topRight],
+      [topRight, bottomRight],
+      [bottomRight, bottomLeft],
+      [bottomLeft, topLeft],
+    ].some(
+      ([a, b]) => distanceToSegmentSquared(point, a, b) <= maxDistanceSquared,
+    );
+  }
+
+  const radiusX = (maxX - minX) / 2;
+  const radiusY = (maxY - minY) / 2;
+  if (radiusX === 0 || radiusY === 0) {
+    return distanceToSegmentSquared(point, start, end) <= maxDistanceSquared;
+  }
+
+  // Approximate the ellipse with short segments. This provides a consistent
+  // screen-space target around the actual stroked line, including elongated
+  // ellipses, without treating the enclosed area as a hit.
+  const perimeter = Math.PI * (3 * (radiusX + radiusY) - Math.sqrt(
+    (3 * radiusX + radiusY) * (radiusX + 3 * radiusY),
+  ));
+  const segmentCount = Math.min(96, Math.max(24, Math.ceil(perimeter / 4)));
+  const centerX = minX + radiusX;
+  const centerY = minY + radiusY;
+  let previous = { x: centerX + radiusX, y: centerY };
+  for (let index = 1; index <= segmentCount; index += 1) {
+    const angle = (index / segmentCount) * Math.PI * 2;
+    const current = {
+      x: centerX + Math.cos(angle) * radiusX,
+      y: centerY + Math.sin(angle) * radiusY,
+    };
+    if (distanceToSegmentSquared(point, previous, current) <= maxDistanceSquared) {
+      return true;
+    }
+    previous = current;
+  }
+  return false;
+};
+
+/**
+ * Finds the topmost canvas item selectable at a point. Closed shapes are only
+ * selectable from their stroked outline; text and freehand marks retain their
+ * normal hit areas.
+ */
+export const findTopmostSelectableStrokeAtPoint = (
+  strokes: Stroke[],
+  point: Point,
+  hitPadding = 0,
+) => {
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    const stroke = strokes[index];
+    if (stroke.tool === "eraser") continue;
+
+    const isHit =
+      isShapeTool(stroke.tool) && stroke.points.length > 1
+        ? doesShapeOutlineContainPoint(stroke, point, hitPadding)
+        : doesStrokeContainPoint(stroke, point, hitPadding);
+    if (isHit) return index;
+  }
+  return -1;
+};
+
 const boundsOverlap = (a: Bounds, b: Bounds, padding: number) =>
   !(
     a.maxX + padding < b.minX ||

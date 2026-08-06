@@ -14,6 +14,7 @@ import {
   boundsFromText,
   boundsFromPoints,
   DEFAULT_TEXT_FONT_SIZE,
+  findTopmostSelectableStrokeAtPoint,
   findTopmostStrokeAtPoint,
   includePoint,
   isShapeTool,
@@ -310,7 +311,7 @@ export default function BoardCanvas() {
       if (isSelectionTool(toolRef.current)) {
         const screen = getScreenPos(e);
         const world = screenToWorld(camera.offset, camera.scale, screen);
-        const hitIndex = findTopmostStrokeAtPoint(
+        const hitIndex = findTopmostSelectableStrokeAtPoint(
           strokesRef.current,
           world,
           6 / camera.scale,
