@@ -108,7 +108,7 @@ type BoardState = {
 };
 
 export const useBoardStore = create<BoardState>()((set) => ({
-  tool: "pen",
+  tool: "pencil",
   color: "#000000",
   lineWidth: 4,
   strokes: [],

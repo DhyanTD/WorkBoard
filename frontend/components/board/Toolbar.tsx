@@ -8,12 +8,14 @@ import ColorSwatch from "@/components/board/ColorSwatch";
 import WidthSlider from "@/components/board/WidthSlider";
 
 const TOOLS: { id: Tool; label: string }[] = [
-  { id: "pen", label: "Pen" },
   { id: "pencil", label: "Pencil" },
   { id: "eraser", label: "Eraser" },
   { id: "select", label: "Select" },
-  { id: "square", label: "Square" },
+  { id: "line", label: "Line" },
+  { id: "arrow", label: "Arrow" },
+  { id: "square", label: "Rectangle" },
   { id: "circle", label: "Circle" },
+  { id: "rhombus", label: "Rhombus" },
 ];
 
 function Divider() {
@@ -37,8 +39,8 @@ export default function Toolbar() {
 
   const selectColor = (c: string) => {
     setColor(c);
-    // Leaving eraser/hand via a color pick should drop into the pen.
-    if (!isDrawingTool(tool)) setTool("pen");
+    // Leaving eraser/hand via a color pick should drop into the freehand tool.
+    if (!isDrawingTool(tool)) setTool("pencil");
   };
 
   return (

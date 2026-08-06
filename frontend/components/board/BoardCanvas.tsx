@@ -11,13 +11,13 @@ import {
 import { camera, useBoardStore } from "@/store/useBoardStore";
 import {
   boundsFromPoint,
+  boundsFromFixedGeometry,
   boundsFromText,
-  boundsFromPoints,
   DEFAULT_TEXT_FONT_SIZE,
   findTopmostSelectableStrokeAtPoint,
   findTopmostStrokeAtPoint,
   includePoint,
-  isShapeTool,
+  isFixedGeometryTool,
   isSelectionTool,
   isStrokeVisible,
   MAX_CANVAS_DPR,
@@ -395,10 +395,15 @@ export default function BoardCanvas() {
       const t = currentRef.current.tool;
       const world = screenToWorld(camera.offset, camera.scale, getScreenPos(e));
 
-      if (isShapeTool(t)) {
+      if (isFixedGeometryTool(t)) {
         const first = currentRef.current.points[0];
         currentRef.current.points = [first, world];
-        currentRef.current.bounds = boundsFromPoints(first, world);
+        currentRef.current.bounds = boundsFromFixedGeometry(
+          t,
+          first,
+          world,
+          currentRef.current.lineWidth,
+        );
         scheduleRedraw();
       } else {
         const points = currentRef.current.points;

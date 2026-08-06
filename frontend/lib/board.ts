@@ -1,4 +1,5 @@
 export type Tool =
+  /** Retained so drawings created before Pencil became the only freehand tool still render. */
   | "pen"
   | "pencil"
   | "eraser"
@@ -6,6 +7,9 @@ export type Tool =
   | "text"
   | "square"
   | "circle"
+  | "rhombus"
+  | "line"
+  | "arrow"
   | "hand";
 
 export type Point = { x: number; y: number };
@@ -49,7 +53,13 @@ export const POINT_SAMPLE_DISTANCE = 2;
 export const DEFAULT_TEXT_FONT_SIZE = 20;
 
 export const isShapeTool = (tool: Tool) =>
-  tool === "square" || tool === "circle";
+  tool === "square" || tool === "circle" || tool === "rhombus";
+
+export const isStraightLineTool = (tool: Tool) =>
+  tool === "line" || tool === "arrow";
+
+export const isFixedGeometryTool = (tool: Tool) =>
+  isShapeTool(tool) || isStraightLineTool(tool);
 
 export const isTextTool = (tool: Tool) => tool === "text";
 
@@ -61,7 +71,10 @@ export const isDrawingTool = (tool: Tool) =>
   tool === "eraser" ||
   tool === "text" ||
   tool === "square" ||
-  tool === "circle";
+  tool === "circle" ||
+  tool === "rhombus" ||
+  tool === "line" ||
+  tool === "arrow";
 
 export const boundsFromPoint = (point: Point): Bounds => ({
   minX: point.x,
@@ -76,6 +89,45 @@ export const boundsFromPoints = (a: Point, b: Point): Bounds => ({
   maxX: Math.max(a.x, b.x),
   maxY: Math.max(a.y, b.y),
 });
+
+const getArrowHeadPoints = (start: Point, end: Point, lineWidth: number) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return [end, end];
+
+  const headLength = Math.min(length / 2, Math.max(12, lineWidth * 3));
+  const angle = Math.atan2(dy, dx);
+  const headAngle = Math.PI / 6;
+  return [
+    {
+      x: end.x - Math.cos(angle - headAngle) * headLength,
+      y: end.y - Math.sin(angle - headAngle) * headLength,
+    },
+    {
+      x: end.x - Math.cos(angle + headAngle) * headLength,
+      y: end.y - Math.sin(angle + headAngle) * headLength,
+    },
+  ];
+};
+
+/** Includes an arrow's head so it can be culled and selected accurately. */
+export const boundsFromFixedGeometry = (
+  tool: Tool,
+  start: Point,
+  end: Point,
+  lineWidth: number,
+) => {
+  const points =
+    tool === "arrow"
+      ? [start, end, ...getArrowHeadPoints(start, end, lineWidth)]
+      : [start, end];
+  const bounds = boundsFromPoint(points[0]);
+  for (let index = 1; index < points.length; index += 1) {
+    includePoint(bounds, points[index]);
+  }
+  return bounds;
+};
 
 /** Approximate text bounds for culling and pointer hit-testing. */
 export const boundsFromText = (
@@ -180,6 +232,18 @@ export const doesStrokeContainPoint = (
   if (isShapeTool(stroke.tool) && stroke.points.length > 1) {
     if (stroke.tool === "square") return true;
 
+    if (stroke.tool === "rhombus") {
+      const radiusX = Math.max((maxX - minX) / 2 + hitRadius, hitRadius);
+      const radiusY = Math.max((maxY - minY) / 2 + hitRadius, hitRadius);
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      return (
+        Math.abs(point.x - centerX) / radiusX +
+          Math.abs(point.y - centerY) / radiusY <=
+        1
+      );
+    }
+
     const radiusX = Math.max((maxX - minX) / 2 + hitRadius, hitRadius);
     const radiusY = Math.max((maxY - minY) / 2 + hitRadius, hitRadius);
     const centerX = (minX + maxX) / 2;
@@ -192,6 +256,21 @@ export const doesStrokeContainPoint = (
   if (isTextTool(stroke.tool)) return true;
 
   const points = stroke.points;
+  if (stroke.tool === "arrow" && points.length > 1) {
+    const [headLeft, headRight] = getArrowHeadPoints(
+      points[0],
+      points[points.length - 1],
+      stroke.lineWidth,
+    );
+    const end = points[points.length - 1];
+    const maxDistanceSquared = hitRadius * hitRadius;
+    return (
+      distanceToSegmentSquared(point, points[0], end) <= maxDistanceSquared ||
+      distanceToSegmentSquared(point, end, headLeft) <= maxDistanceSquared ||
+      distanceToSegmentSquared(point, end, headRight) <= maxDistanceSquared
+    );
+  }
+
   if (points.length === 1) {
     const dx = point.x - points[0].x;
     const dy = point.y - points[0].y;
@@ -265,6 +344,21 @@ const doesShapeOutlineContainPoint = (
       [topRight, bottomRight],
       [bottomRight, bottomLeft],
       [bottomLeft, topLeft],
+    ].some(
+      ([a, b]) => distanceToSegmentSquared(point, a, b) <= maxDistanceSquared,
+    );
+  }
+
+  if (stroke.tool === "rhombus") {
+    const top = { x: (minX + maxX) / 2, y: minY };
+    const right = { x: maxX, y: (minY + maxY) / 2 };
+    const bottom = { x: (minX + maxX) / 2, y: maxY };
+    const left = { x: minX, y: (minY + maxY) / 2 };
+    return [
+      [top, right],
+      [right, bottom],
+      [bottom, left],
+      [left, top],
     ].some(
       ([a, b]) => distanceToSegmentSquared(point, a, b) <= maxDistanceSquared,
     );
@@ -465,6 +559,54 @@ const applyStrokeStyle = (ctx: CanvasRenderingContext2D, s: Stroke) => {
   ctx.fillStyle = s.tool === "eraser" ? BOARD_BG : s.color;
 };
 
+const drawRoundedPolygon = (
+  ctx: CanvasRenderingContext2D,
+  vertices: Point[],
+  cornerRadius: number,
+) => {
+  const pointBefore = (current: Point, previous: Point, distance: number) => {
+    const length = Math.hypot(previous.x - current.x, previous.y - current.y);
+    return {
+      x: current.x + ((previous.x - current.x) / length) * distance,
+      y: current.y + ((previous.y - current.y) / length) * distance,
+    };
+  };
+  const pointAfter = (current: Point, next: Point, distance: number) => {
+    const length = Math.hypot(next.x - current.x, next.y - current.y);
+    return {
+      x: current.x + ((next.x - current.x) / length) * distance,
+      y: current.y + ((next.y - current.y) / length) * distance,
+    };
+  };
+  const offsetAt = (index: number) => {
+    const current = vertices[index];
+    const previous = vertices[(index - 1 + vertices.length) % vertices.length];
+    const next = vertices[(index + 1) % vertices.length];
+    return Math.min(
+      cornerRadius,
+      Math.hypot(previous.x - current.x, previous.y - current.y) / 2,
+      Math.hypot(next.x - current.x, next.y - current.y) / 2,
+    );
+  };
+
+  const firstOffset = offsetAt(0);
+  const first = vertices[0];
+  const firstPrevious = vertices[vertices.length - 1];
+  const firstBefore = pointBefore(first, firstPrevious, firstOffset);
+  ctx.moveTo(firstBefore.x, firstBefore.y);
+  for (let index = 0; index < vertices.length; index += 1) {
+    const current = vertices[index];
+    const previous = vertices[(index - 1 + vertices.length) % vertices.length];
+    const next = vertices[(index + 1) % vertices.length];
+    const offset = offsetAt(index);
+    const before = pointBefore(current, previous, offset);
+    const after = pointAfter(current, next, offset);
+    if (index > 0) ctx.lineTo(before.x, before.y);
+    ctx.quadraticCurveTo(current.x, current.y, after.x, after.y);
+  }
+  ctx.closePath();
+};
+
 /** Renders a complete stroke (dot, shape, or smooth path). */
 export const renderStroke = (ctx: CanvasRenderingContext2D, s: Stroke) => {
   const p = s.points;
@@ -490,6 +632,24 @@ export const renderStroke = (ctx: CanvasRenderingContext2D, s: Stroke) => {
     return;
   }
 
+  if (isStraightLineTool(s.tool)) {
+    const start = p[0];
+    const end = p[p.length - 1];
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    if (s.tool === "arrow") {
+      const [headLeft, headRight] = getArrowHeadPoints(start, end, s.lineWidth);
+      ctx.moveTo(end.x, end.y);
+      ctx.lineTo(headLeft.x, headLeft.y);
+      ctx.moveTo(end.x, end.y);
+      ctx.lineTo(headRight.x, headRight.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
   if (isShapeTool(s.tool)) {
     const a = p[0];
     const b = p[p.length - 1];
@@ -498,8 +658,35 @@ export const renderStroke = (ctx: CanvasRenderingContext2D, s: Stroke) => {
     const w = Math.abs(b.x - a.x);
     const h = Math.abs(b.y - a.y);
     ctx.beginPath();
+    if (w === 0 || h === 0) {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     if (s.tool === "square") {
-      ctx.rect(x, y, w, h);
+      drawRoundedPolygon(
+        ctx,
+        [
+          { x, y },
+          { x: x + w, y },
+          { x: x + w, y: y + h },
+          { x, y: y + h },
+        ],
+        Math.min(16, w / 4, h / 4),
+      );
+    } else if (s.tool === "rhombus") {
+      drawRoundedPolygon(
+        ctx,
+        [
+          { x: x + w / 2, y },
+          { x: x + w, y: y + h / 2 },
+          { x: x + w / 2, y: y + h },
+          { x, y: y + h / 2 },
+        ],
+        Math.min(16, Math.hypot(w / 2, h / 2) / 4),
+      );
     } else {
       ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
     }
