@@ -20,6 +20,8 @@ export type Bounds = {
   maxY: number;
 };
 export type Stroke = {
+  /** Stable identity used to keep connector arrows attached while shapes move. */
+  id?: string;
   tool: Tool;
   color: string;
   lineWidth: number;
@@ -29,6 +31,9 @@ export type Stroke = {
   text?: string;
   /** World-space text size, in CSS pixels at 100% zoom. */
   fontSize?: number;
+  /** The shapes an arrow is attached to, when it was dragged box-to-box. */
+  startBindingId?: string;
+  endBindingId?: string;
 };
 
 export const COLORS = [
@@ -54,6 +59,40 @@ export const DEFAULT_TEXT_FONT_SIZE = 20;
 
 export const isShapeTool = (tool: Tool) =>
   tool === "square" || tool === "circle" || tool === "rhombus";
+
+/**
+ * Returns the point on a shape's outline facing `toward`. This lets connector
+ * arrows meet a box cleanly instead of stopping wherever the pointer happens
+ * to be inside it.
+ */
+export const getShapeConnectionPoint = (shape: Stroke, toward: Point): Point => {
+  const { minX, minY, maxX, maxY } = shape.bounds;
+  const center = {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+  };
+  const radiusX = (maxX - minX) / 2;
+  const radiusY = (maxY - minY) / 2;
+  const dx = toward.x - center.x;
+  const dy = toward.y - center.y;
+
+  if (!isShapeTool(shape.tool) || radiusX === 0 || radiusY === 0) {
+    return center;
+  }
+  if (dx === 0 && dy === 0) return { x: maxX, y: center.y };
+
+  const scale =
+    shape.tool === "circle"
+      ? 1 / Math.hypot(dx / radiusX, dy / radiusY)
+      : shape.tool === "rhombus"
+        ? 1 / (Math.abs(dx) / radiusX + Math.abs(dy) / radiusY)
+        : 1 / Math.max(Math.abs(dx) / radiusX, Math.abs(dy) / radiusY);
+
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  };
+};
 
 export const isStraightLineTool = (tool: Tool) =>
   tool === "line" || tool === "arrow";
@@ -300,6 +339,25 @@ export const findTopmostStrokeAtPoint = (
     // Eraser marks are visual masks, not independently selectable objects.
     if (
       stroke.tool !== "eraser" &&
+      doesStrokeContainPoint(stroke, point, hitPadding)
+    ) {
+      return index;
+    }
+  }
+  return -1;
+};
+
+/** Finds the uppermost closed shape whose interior contains a point. */
+export const findTopmostShapeAtPoint = (
+  strokes: Stroke[],
+  point: Point,
+  hitPadding = 0,
+) => {
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    const stroke = strokes[index];
+    if (
+      isShapeTool(stroke.tool) &&
+      stroke.points.length > 1 &&
       doesStrokeContainPoint(stroke, point, hitPadding)
     ) {
       return index;

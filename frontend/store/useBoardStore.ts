@@ -33,6 +33,12 @@ type EraseChange = {
   after: Stroke[];
 };
 
+type ReplaceChange = {
+  index: number;
+  before: Stroke;
+  after: Stroke;
+};
+
 type HistoryEntry = {
   kind: "add" | "remove";
   index: number;
@@ -43,10 +49,33 @@ type HistoryEntry = {
   changes: EraseChange[];
 } | {
   kind: "replace";
-  index: number;
-  before: Stroke;
-  after: Stroke;
+  changes: [ReplaceChange];
+} | {
+  kind: "replace-many";
+  changes: ReplaceChange[];
 };
+
+const applyReplacements = (
+  strokes: Stroke[],
+  changes: ReplaceChange[],
+  version: "before" | "after",
+) => {
+  const next = [...strokes];
+  for (const change of changes) next[change.index] = change[version];
+  return next;
+};
+
+let fallbackStrokeId = 0;
+
+const withStrokeId = (stroke: Stroke): Stroke =>
+  stroke.id
+    ? stroke
+    : {
+        ...stroke,
+        id:
+          globalThis.crypto?.randomUUID?.() ??
+          `stroke-${Date.now()}-${fallbackStrokeId++}`,
+      };
 
 const undoErase = (strokes: Stroke[], changes: EraseChange[]) => {
   // The visual eraser mark is always appended after the changed fragments.
@@ -97,6 +126,7 @@ type BoardState = {
   eraseWithStroke: (eraser: Stroke) => void;
   removeStrokeAt: (index: number) => void;
   replaceStrokeAt: (index: number, stroke: Stroke) => void;
+  replaceStrokes: (changes: ReplaceChange[]) => void;
   undo: () => void;
   redo: () => void;
   clear: () => void;
@@ -124,16 +154,19 @@ export const useBoardStore = create<BoardState>()((set) => ({
   setLineWidth: (lineWidth) => set({ lineWidth }),
 
   commitStroke: (stroke) =>
-    set((s) => ({
-      strokes: [...s.strokes, stroke],
-      undoStack: [
-        ...s.undoStack,
-        { kind: "add", index: s.strokes.length, stroke },
-      ],
-      redoStack: [],
-      canUndo: true,
-      canRedo: false,
-    })),
+    set((s) => {
+      const identifiedStroke = withStrokeId(stroke);
+      return {
+        strokes: [...s.strokes, identifiedStroke],
+        undoStack: [
+          ...s.undoStack,
+          { kind: "add", index: s.strokes.length, stroke: identifiedStroke },
+        ],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
 
   eraseWithStroke: (eraser) =>
     set((s) => {
@@ -180,7 +213,26 @@ export const useBoardStore = create<BoardState>()((set) => ({
           after,
           ...s.strokes.slice(index + 1),
         ],
-        undoStack: [...s.undoStack, { kind: "replace", index, before, after }],
+        undoStack: [
+          ...s.undoStack,
+          { kind: "replace", changes: [{ index, before, after }] },
+        ],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
+
+  replaceStrokes: (changes) =>
+    set((s) => {
+      const validChanges = changes.filter((change) => s.strokes[change.index]);
+      if (validChanges.length === 0) return s;
+      return {
+        strokes: applyReplacements(s.strokes, validChanges, "after"),
+        undoStack: [
+          ...s.undoStack,
+          { kind: "replace-many", changes: validChanges },
+        ],
         redoStack: [],
         canUndo: true,
         canRedo: false,
@@ -194,12 +246,8 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? undoErase(s.strokes, entry.changes)
-          : entry.kind === "replace"
-          ? [
-              ...s.strokes.slice(0, entry.index),
-              entry.before,
-              ...s.strokes.slice(entry.index + 1),
-            ]
+          : entry.kind === "replace" || entry.kind === "replace-many"
+          ? applyReplacements(s.strokes, entry.changes, "before")
           : entry.kind === "add"
           ? [...s.strokes.slice(0, entry.index), ...s.strokes.slice(entry.index + 1)]
           : [
@@ -223,12 +271,8 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? redoErase(s.strokes, entry)
-          : entry.kind === "replace"
-          ? [
-              ...s.strokes.slice(0, entry.index),
-              entry.after,
-              ...s.strokes.slice(entry.index + 1),
-            ]
+          : entry.kind === "replace" || entry.kind === "replace-many"
+          ? applyReplacements(s.strokes, entry.changes, "after")
           : entry.kind === "add"
           ? [
               ...s.strokes.slice(0, entry.index),

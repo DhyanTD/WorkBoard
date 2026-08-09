@@ -14,10 +14,13 @@ import {
   boundsFromFixedGeometry,
   boundsFromText,
   DEFAULT_TEXT_FONT_SIZE,
+  findTopmostShapeAtPoint,
   findTopmostSelectableStrokeAtPoint,
   findTopmostStrokeAtPoint,
+  getShapeConnectionPoint,
   includePoint,
   isFixedGeometryTool,
+  isShapeTool,
   isSelectionTool,
   isStrokeVisible,
   MAX_CANVAS_DPR,
@@ -41,6 +44,36 @@ type TextEditor = {
   fontSize: number;
 };
 
+/** Creates a temporary arrow preview with only the endpoints bound to a shape moved. */
+const translateBoundArrow = (arrow: Stroke, shapeId: string, delta: Point): Stroke => {
+  if (
+    arrow.tool !== "arrow" ||
+    arrow.points.length < 2 ||
+    (arrow.startBindingId !== shapeId && arrow.endBindingId !== shapeId)
+  ) {
+    return arrow;
+  }
+
+  const points = arrow.points.map((point, index) => {
+    const isBoundEndpoint =
+      (index === 0 && arrow.startBindingId === shapeId) ||
+      (index === arrow.points.length - 1 && arrow.endBindingId === shapeId);
+    return isBoundEndpoint
+      ? { x: point.x + delta.x, y: point.y + delta.y }
+      : point;
+  });
+  return {
+    ...arrow,
+    points,
+    bounds: boundsFromFixedGeometry(
+      "arrow",
+      points[0],
+      points[points.length - 1],
+      arrow.lineWidth,
+    ),
+  };
+};
+
 export default function BoardCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -52,6 +85,7 @@ export default function BoardCanvas() {
   const eraseWithStroke = useBoardStore((s) => s.eraseWithStroke);
   const removeStrokeAt = useBoardStore((s) => s.removeStrokeAt);
   const replaceStrokeAt = useBoardStore((s) => s.replaceStrokeAt);
+  const replaceStrokes = useBoardStore((s) => s.replaceStrokes);
 
   // Latest UI values for pointer handlers (avoids re-creating handlers).
   const toolRef = useRef(tool);
@@ -81,6 +115,8 @@ export default function BoardCanvas() {
   const selectionStartRef = useRef<Point>({ x: 0, y: 0 });
   const selectedStrokeStartRef = useRef<Stroke | null>(null);
   const movingStrokeRef = useRef<Stroke | null>(null);
+  const connectorSourceIndexRef = useRef<number | null>(null);
+  const connectorTargetIndexRef = useRef<number | null>(null);
   const lastEmptySelectionTapRef = useRef<{
     screen: Point;
     time: number;
@@ -186,14 +222,52 @@ export default function BoardCanvas() {
       -offset.x * dpr * scale,
       -offset.y * dpr * scale,
     );
+    const selectedStrokeStart = selectedStrokeStartRef.current;
+    const movingStroke = movingStrokeRef.current;
+    const selectedShapeId =
+      selectedStrokeStart && isShapeTool(selectedStrokeStart.tool)
+        ? selectedStrokeStart.id
+        : undefined;
+    const selectionDelta =
+      selectedStrokeStart && selectedShapeId && movingStroke
+        ? {
+            x: movingStroke.points[0].x - selectedStrokeStart.points[0].x,
+            y: movingStroke.points[0].y - selectedStrokeStart.points[0].y,
+          }
+        : null;
     for (let index = 0; index < strokesRef.current.length; index += 1) {
-      const stroke =
-        index === selectedIndexRef.current && movingStrokeRef.current
-          ? movingStrokeRef.current
+      let stroke =
+        index === selectedIndexRef.current && movingStroke
+          ? movingStroke
           : strokesRef.current[index];
+      if (selectedShapeId && selectionDelta) {
+        stroke = translateBoundArrow(stroke, selectedShapeId, selectionDelta);
+      }
       if (isStrokeVisible(stroke, viewport)) renderStroke(ctx, stroke);
     }
     const current = currentRef.current;
+    if (current?.tool === "arrow") {
+      const drawConnectionHint = (index: number | null, color: string) => {
+        if (index === null) return;
+        const shape = strokesRef.current[index];
+        if (!shape) return;
+        const padding = 5 / scale;
+        const { minX, minY, maxX, maxY } = shape.bounds;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5 / scale;
+        ctx.setLineDash([4 / scale, 3 / scale]);
+        ctx.strokeRect(
+          minX - padding,
+          minY - padding,
+          maxX - minX + padding * 2,
+          maxY - minY + padding * 2,
+        );
+        ctx.restore();
+      };
+      drawConnectionHint(connectorSourceIndexRef.current, "#2563eb");
+      drawConnectionHint(connectorTargetIndexRef.current, "#16a34a");
+    }
     if (current && isStrokeVisible(current, viewport)) {
       renderStroke(ctx, current);
     }
@@ -349,12 +423,23 @@ export default function BoardCanvas() {
       canvas.setPointerCapture(e.pointerId);
       drawingRef.current = true;
       const world = screenToWorld(camera.offset, camera.scale, getScreenPos(e));
+      const connectorSourceIndex =
+        toolRef.current === "arrow"
+          ? findTopmostShapeAtPoint(strokesRef.current, world, 6 / camera.scale)
+          : -1;
+      connectorSourceIndexRef.current =
+        connectorSourceIndex === -1 ? null : connectorSourceIndex;
+      connectorTargetIndexRef.current = null;
       currentRef.current = {
         tool: toolRef.current,
         color: colorRef.current,
         lineWidth: lineWidthRef.current,
         points: [world],
         bounds: boundsFromPoint(world),
+        startBindingId:
+          toolRef.current !== "arrow" || connectorSourceIndex === -1
+            ? undefined
+            : strokesRef.current[connectorSourceIndex]?.id,
       };
       scheduleRedraw();
     },
@@ -397,11 +482,37 @@ export default function BoardCanvas() {
 
       if (isFixedGeometryTool(t)) {
         const first = currentRef.current.points[0];
-        currentRef.current.points = [first, world];
+        if (t === "arrow") {
+          const sourceIndex = connectorSourceIndexRef.current;
+          const source =
+            sourceIndex === null ? null : strokesRef.current[sourceIndex];
+          const targetIndex = findTopmostShapeAtPoint(
+            strokesRef.current,
+            world,
+            6 / camera.scale,
+          );
+          const target =
+            targetIndex === -1 || targetIndex === sourceIndex
+              ? null
+              : strokesRef.current[targetIndex];
+          const start = source
+            ? getShapeConnectionPoint(source, world)
+            : first;
+          const end = target ? getShapeConnectionPoint(target, start) : world;
+
+          connectorTargetIndexRef.current = target ? targetIndex : null;
+          currentRef.current = {
+            ...currentRef.current,
+            points: [start, end],
+            endBindingId: target?.id,
+          };
+        } else {
+          currentRef.current.points = [first, world];
+        }
         currentRef.current.bounds = boundsFromFixedGeometry(
           t,
-          first,
-          world,
+          currentRef.current.points[0],
+          currentRef.current.points[1],
           currentRef.current.lineWidth,
         );
         scheduleRedraw();
@@ -440,7 +551,25 @@ export default function BoardCanvas() {
       movingSelectionRef.current = false;
       const index = selectedIndexRef.current;
       if (index !== null && movingStrokeRef.current) {
-        replaceStrokeAt(index, movingStrokeRef.current);
+        const before = selectedStrokeStartRef.current;
+        const after = movingStrokeRef.current;
+        if (before && isShapeTool(before.tool) && before.id) {
+          const delta = {
+            x: after.points[0].x - before.points[0].x,
+            y: after.points[0].y - before.points[0].y,
+          };
+          const changes = [{ index, before, after }];
+          for (let arrowIndex = 0; arrowIndex < strokesRef.current.length; arrowIndex += 1) {
+            const arrow = strokesRef.current[arrowIndex];
+            const movedArrow = translateBoundArrow(arrow, before.id, delta);
+            if (movedArrow !== arrow) {
+              changes.push({ index: arrowIndex, before: arrow, after: movedArrow });
+            }
+          }
+          replaceStrokes(changes);
+        } else {
+          replaceStrokeAt(index, after);
+        }
       }
       selectedStrokeStartRef.current = null;
       movingStrokeRef.current = null;
@@ -457,8 +586,10 @@ export default function BoardCanvas() {
       }
     }
     currentRef.current = null;
+    connectorSourceIndexRef.current = null;
+    connectorTargetIndexRef.current = null;
     scheduleRedraw();
-  }, [commitStroke, eraseWithStroke, replaceStrokeAt, scheduleRedraw]);
+  }, [commitStroke, eraseWithStroke, replaceStrokeAt, replaceStrokes, scheduleRedraw]);
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
