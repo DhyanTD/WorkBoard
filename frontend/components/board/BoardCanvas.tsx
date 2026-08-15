@@ -9,7 +9,9 @@ import {
   type PointerEvent,
 } from "react";
 import { camera, useBoardStore } from "@/store/useBoardStore";
+import { THEME_CHANGE_EVENT } from "@/components/board/ThemeToggle";
 import {
+  BOARD_BG,
   boundsFromPoint,
   boundsFromFixedGeometry,
   boundsFromText,
@@ -30,11 +32,22 @@ import {
   shouldSamplePoint,
   translateStroke,
   type Point,
+  type BoardRenderPalette,
   type Stroke,
 } from "@/lib/board";
 
 const getCanvasDpr = () =>
   Math.min(window.devicePixelRatio || 1, MAX_CANVAS_DPR);
+
+const getBoardRenderPalette = (): BoardRenderPalette => {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    background:
+      styles.getPropertyValue("--canvas-background").trim() || BOARD_BG,
+    neutralInk:
+      styles.getPropertyValue("--canvas-ink").trim() || "#000000",
+  };
+};
 
 type TextEditor = {
   world: Point;
@@ -198,6 +211,7 @@ export default function BoardCanvas() {
     const w = rect.width;
     const h = rect.height;
     const { offset, scale } = camera;
+    const palette = getBoardRenderPalette();
     const viewport = {
       minX: offset.x,
       minY: offset.y,
@@ -208,7 +222,7 @@ export default function BoardCanvas() {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = palette.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
 
@@ -243,7 +257,7 @@ export default function BoardCanvas() {
       if (selectedShapeId && selectionDelta) {
         stroke = translateBoundArrow(stroke, selectedShapeId, selectionDelta);
       }
-      if (isStrokeVisible(stroke, viewport)) renderStroke(ctx, stroke);
+      if (isStrokeVisible(stroke, viewport)) renderStroke(ctx, stroke, palette);
     }
     const current = currentRef.current;
     if (current?.tool === "arrow") {
@@ -269,7 +283,7 @@ export default function BoardCanvas() {
       drawConnectionHint(connectorTargetIndexRef.current, "#16a34a");
     }
     if (current && isStrokeVisible(current, viewport)) {
-      renderStroke(ctx, current);
+      renderStroke(ctx, current, palette);
     }
 
     const activeSelection = selectedIndexRef.current;
@@ -348,6 +362,11 @@ export default function BoardCanvas() {
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, [resize]);
+
+  useEffect(() => {
+    window.addEventListener(THEME_CHANGE_EVENT, scheduleRedraw);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, scheduleRedraw);
+  }, [scheduleRedraw]);
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
@@ -535,7 +554,7 @@ export default function BoardCanvas() {
           -camera.offset.x * dpr * scale,
           -camera.offset.y * dpr * scale,
         );
-        paintLastSegment(ctx, currentRef.current);
+        paintLastSegment(ctx, currentRef.current, getBoardRenderPalette());
         ctx.restore();
       }
     },
@@ -701,11 +720,14 @@ export default function BoardCanvas() {
             }
           }}
           aria-label="Canvas text. Press Enter to place or Escape to select and move it."
-          className="absolute z-10 border-0 bg-transparent p-0 leading-tight outline-none caret-zinc-900"
+          className="absolute z-10 border-0 bg-transparent p-0 leading-tight outline-none caret-zinc-900 dark:caret-zinc-100"
           style={{
             left: textEditor.screen.x,
             top: textEditor.screen.y,
-            color: textEditor.color,
+            color:
+              textEditor.color === "#000000"
+                ? "var(--canvas-ink)"
+                : textEditor.color,
             fontSize: textEditor.fontSize,
             width: `${Math.max(1, textEditor.value.length + 1)}ch`,
           }}

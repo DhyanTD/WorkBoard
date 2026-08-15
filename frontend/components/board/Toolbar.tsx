@@ -6,6 +6,7 @@ import ToolButton from "@/components/board/ToolButton";
 import ActionButton from "@/components/board/ActionButton";
 import ColorSwatch from "@/components/board/ColorSwatch";
 import WidthSlider from "@/components/board/WidthSlider";
+import ThemeToggle from "@/components/board/ThemeToggle";
 
 const TOOLS: { id: Tool; label: string }[] = [
   { id: "pencil", label: "Pencil" },
@@ -44,7 +45,7 @@ export default function Toolbar() {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
+    <div className="flex flex-wrap items-center gap-3 border-b border-zinc-200 bg-[var(--toolbar-background)] px-4 py-2 shadow-[0_1px_0_rgba(0,0,0,0.02)] backdrop-blur-xl transition-colors dark:border-zinc-800 dark:shadow-black/20">
       <ToolButton
         tool="hand"
         active={tool === "hand"}
@@ -93,6 +94,11 @@ export default function Toolbar() {
       <ActionButton onClick={clear} danger>
         Clear
       </ActionButton>
+
+      <div className="ml-auto flex items-center gap-3">
+        <Divider />
+        <ThemeToggle />
+      </div>
     </div>
   );
 }

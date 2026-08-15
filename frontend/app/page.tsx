@@ -6,9 +6,9 @@ import ZoomControls from "@/components/board/ZoomControls";
 
 export default function Home() {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-[var(--background)]">
       <Toolbar />
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden bg-[var(--canvas-background)]">
         <BoardCanvas />
         <ZoomControls />
       </div>

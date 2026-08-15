@@ -48,6 +48,16 @@ export const COLORS = [
 ];
 export const BOARD_BG = "#ffffff";
 
+export type BoardRenderPalette = {
+  background: string;
+  neutralInk: string;
+};
+
+const DEFAULT_RENDER_PALETTE: BoardRenderPalette = {
+  background: BOARD_BG,
+  neutralInk: "#000000",
+};
+
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 4;
 export const ZOOM_STEP = 1.2;
@@ -608,13 +618,23 @@ export const zoomAt = (
 };
 
 /** Sets up stroke/fill style for the given stroke (eraser paints board bg). */
-const applyStrokeStyle = (ctx: CanvasRenderingContext2D, s: Stroke) => {
+const applyStrokeStyle = (
+  ctx: CanvasRenderingContext2D,
+  s: Stroke,
+  palette: BoardRenderPalette,
+) => {
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.lineWidth = s.lineWidth;
   ctx.globalCompositeOperation = "source-over";
-  ctx.strokeStyle = s.tool === "eraser" ? BOARD_BG : s.color;
-  ctx.fillStyle = s.tool === "eraser" ? BOARD_BG : s.color;
+  const strokeColor =
+    s.tool === "eraser"
+      ? palette.background
+      : s.color.toLowerCase() === "#000000"
+        ? palette.neutralInk
+        : s.color;
+  ctx.strokeStyle = strokeColor;
+  ctx.fillStyle = strokeColor;
 };
 
 const drawRoundedPolygon = (
@@ -666,12 +686,16 @@ const drawRoundedPolygon = (
 };
 
 /** Renders a complete stroke (dot, shape, or smooth path). */
-export const renderStroke = (ctx: CanvasRenderingContext2D, s: Stroke) => {
+export const renderStroke = (
+  ctx: CanvasRenderingContext2D,
+  s: Stroke,
+  palette = DEFAULT_RENDER_PALETTE,
+) => {
   const p = s.points;
   if (p.length === 0) return;
 
   ctx.save();
-  applyStrokeStyle(ctx, s);
+  applyStrokeStyle(ctx, s, palette);
 
   if (isTextTool(s.tool)) {
     const fontSize = s.fontSize ?? 20;
@@ -769,10 +793,11 @@ export const renderStroke = (ctx: CanvasRenderingContext2D, s: Stroke) => {
 export const paintLastSegment = (
   ctx: CanvasRenderingContext2D,
   s: Stroke,
+  palette = DEFAULT_RENDER_PALETTE,
 ) => {
   const p = s.points;
   ctx.save();
-  applyStrokeStyle(ctx, s);
+  applyStrokeStyle(ctx, s, palette);
 
   if (p.length === 1) {
     ctx.beginPath();
