@@ -94,11 +94,14 @@ export default function BoardCanvas() {
   const strokes = useBoardStore((s) => s.strokes);
   const redoStack = useBoardStore((s) => s.redoStack);
   const cameraEpoch = useBoardStore((s) => s.cameraEpoch);
+  const selectedIndex = useBoardStore((s) => s.selectedIndex);
   const commitStroke = useBoardStore((s) => s.commitStroke);
   const eraseWithStroke = useBoardStore((s) => s.eraseWithStroke);
   const removeStrokeAt = useBoardStore((s) => s.removeStrokeAt);
+  const deleteSelectedStroke = useBoardStore((s) => s.deleteSelectedStroke);
   const replaceStrokeAt = useBoardStore((s) => s.replaceStrokeAt);
   const replaceStrokes = useBoardStore((s) => s.replaceStrokes);
+  const setSelectedIndex = useBoardStore((s) => s.setSelectedIndex);
 
   // Latest UI values for pointer handlers (avoids re-creating handlers).
   const toolRef = useRef(tool);
@@ -135,7 +138,6 @@ export default function BoardCanvas() {
     time: number;
   } | null>(null);
   const selectedIndexRef = useRef<number | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
   const textEditorRef = useRef<TextEditor | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
@@ -163,7 +165,7 @@ export default function BoardCanvas() {
       selectedIndexRef.current = textIndex;
       setSelectedIndex(textIndex);
     }
-  }, [commitStroke]);
+  }, [commitStroke, setSelectedIndex]);
 
   const startTextEditor = useCallback(
     (world: Point, screen: Point) => {
@@ -180,7 +182,7 @@ export default function BoardCanvas() {
       textEditorRef.current = editor;
       setTextEditor(editor);
     },
-    [commitTextEditor],
+    [commitTextEditor, setSelectedIndex],
   );
 
   useEffect(() => {
@@ -336,7 +338,7 @@ export default function BoardCanvas() {
       setSelectedIndex(null);
     }
     scheduleRedraw();
-  }, [strokes, scheduleRedraw]);
+  }, [strokes, scheduleRedraw, setSelectedIndex]);
   useEffect(() => {
     scheduleRedraw();
   }, [redoStack, cameraEpoch, scheduleRedraw]);
@@ -462,7 +464,7 @@ export default function BoardCanvas() {
       };
       scheduleRedraw();
     },
-    [getScreenPos, removeStrokeAt, scheduleRedraw, startTextEditor],
+    [getScreenPos, removeStrokeAt, scheduleRedraw, setSelectedIndex, startTextEditor],
   );
 
   const onPointerMove = useCallback(
@@ -625,14 +627,13 @@ export default function BoardCanvas() {
       const index = selectedIndexRef.current;
       if (index === null) return;
       e.preventDefault();
-      removeStrokeAt(index);
+      deleteSelectedStroke();
       selectedIndexRef.current = null;
-      setSelectedIndex(null);
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [removeStrokeAt]);
+  }, [deleteSelectedStroke, setSelectedIndex]);
 
   const onPointerUp = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {

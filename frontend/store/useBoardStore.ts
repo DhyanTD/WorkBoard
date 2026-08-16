@@ -114,6 +114,7 @@ type BoardState = {
   redoStack: HistoryEntry[];
   canUndo: boolean;
   canRedo: boolean;
+  selectedIndex: number | null;
   /** Incremented whenever the camera must be re-rendered (Reset View). */
   cameraEpoch: number;
   /** Reactive mirror of `camera.scale` so the toolbar can display it. */
@@ -122,9 +123,11 @@ type BoardState = {
   setTool: (tool: Tool) => void;
   setColor: (color: string) => void;
   setLineWidth: (width: number) => void;
+  setSelectedIndex: (index: number | null) => void;
   commitStroke: (stroke: Stroke) => void;
   eraseWithStroke: (eraser: Stroke) => void;
   removeStrokeAt: (index: number) => void;
+  deleteSelectedStroke: () => void;
   replaceStrokeAt: (index: number, stroke: Stroke) => void;
   replaceStrokes: (changes: ReplaceChange[]) => void;
   undo: () => void;
@@ -146,12 +149,18 @@ export const useBoardStore = create<BoardState>()((set) => ({
   redoStack: [],
   canUndo: false,
   canRedo: false,
+  selectedIndex: null,
   cameraEpoch: 0,
   scale: 1,
 
-  setTool: (tool) => set({ tool }),
+  setTool: (tool) =>
+    set((s) => ({
+      tool,
+      selectedIndex: tool === "select" ? s.selectedIndex : null,
+    })),
   setColor: (color) => set({ color }),
   setLineWidth: (lineWidth) => set({ lineWidth }),
+  setSelectedIndex: (selectedIndex) => set({ selectedIndex }),
 
   commitStroke: (stroke) =>
     set((s) => {
@@ -196,12 +205,23 @@ export const useBoardStore = create<BoardState>()((set) => ({
       if (!stroke) return s;
       return {
         strokes: [...s.strokes.slice(0, index), ...s.strokes.slice(index + 1)],
+        selectedIndex:
+          s.selectedIndex === index
+            ? null
+            : s.selectedIndex !== null && s.selectedIndex > index
+              ? s.selectedIndex - 1
+              : s.selectedIndex,
         undoStack: [...s.undoStack, { kind: "remove", index, stroke }],
         redoStack: [],
         canUndo: true,
         canRedo: false,
       };
     }),
+
+  deleteSelectedStroke: () => {
+    const { selectedIndex, removeStrokeAt } = useBoardStore.getState();
+    if (selectedIndex !== null) removeStrokeAt(selectedIndex);
+  },
 
   replaceStrokeAt: (index, after) =>
     set((s) => {
@@ -257,6 +277,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
             ];
       return {
         strokes,
+        selectedIndex: null,
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, entry],
         canUndo: s.undoStack.length - 1 > 0,
@@ -282,6 +303,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
           : [...s.strokes.slice(0, entry.index), ...s.strokes.slice(entry.index + 1)];
       return {
         strokes,
+        selectedIndex: null,
         undoStack: [...s.undoStack, entry],
         redoStack: s.redoStack.slice(0, -1),
         canUndo: true,
@@ -296,6 +318,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
       redoStack: [],
       canUndo: false,
       canRedo: false,
+      selectedIndex: null,
     }),
 
   resetView: () => {
