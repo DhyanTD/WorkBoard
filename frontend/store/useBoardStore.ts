@@ -39,6 +39,11 @@ type ReplaceChange = {
   after: Stroke;
 };
 
+type RemoveChange = {
+  index: number;
+  stroke: Stroke;
+};
+
 type HistoryEntry = {
   kind: "add" | "remove";
   index: number;
@@ -53,6 +58,9 @@ type HistoryEntry = {
 } | {
   kind: "replace-many";
   changes: ReplaceChange[];
+} | {
+  kind: "remove-many";
+  changes: RemoveChange[];
 };
 
 const applyReplacements = (
@@ -62,6 +70,22 @@ const applyReplacements = (
 ) => {
   const next = [...strokes];
   for (const change of changes) next[change.index] = change[version];
+  return next;
+};
+
+const restoreRemovedStrokes = (strokes: Stroke[], changes: RemoveChange[]) => {
+  const next = [...strokes];
+  for (const change of [...changes].sort((a, b) => a.index - b.index)) {
+    next.splice(change.index, 0, change.stroke);
+  }
+  return next;
+};
+
+const applyRemovals = (strokes: Stroke[], changes: RemoveChange[]) => {
+  const next = [...strokes];
+  for (const change of [...changes].sort((a, b) => b.index - a.index)) {
+    next.splice(change.index, 1);
+  }
   return next;
 };
 
@@ -114,7 +138,7 @@ type BoardState = {
   redoStack: HistoryEntry[];
   canUndo: boolean;
   canRedo: boolean;
-  selectedIndex: number | null;
+  selectedIndices: number[];
   /** Incremented whenever the camera must be re-rendered (Reset View). */
   cameraEpoch: number;
   /** Reactive mirror of `camera.scale` so the toolbar can display it. */
@@ -123,11 +147,11 @@ type BoardState = {
   setTool: (tool: Tool) => void;
   setColor: (color: string) => void;
   setLineWidth: (width: number) => void;
-  setSelectedIndex: (index: number | null) => void;
+  setSelectedIndices: (indices: number[]) => void;
   commitStroke: (stroke: Stroke) => void;
   eraseWithStroke: (eraser: Stroke) => void;
   removeStrokeAt: (index: number) => void;
-  deleteSelectedStroke: () => void;
+  deleteSelectedStrokes: () => void;
   replaceStrokeAt: (index: number, stroke: Stroke) => void;
   replaceStrokes: (changes: ReplaceChange[]) => void;
   undo: () => void;
@@ -149,18 +173,19 @@ export const useBoardStore = create<BoardState>()((set) => ({
   redoStack: [],
   canUndo: false,
   canRedo: false,
-  selectedIndex: null,
+  selectedIndices: [],
   cameraEpoch: 0,
   scale: 1,
 
   setTool: (tool) =>
     set((s) => ({
       tool,
-      selectedIndex: tool === "select" ? s.selectedIndex : null,
+      selectedIndices: tool === "select" ? s.selectedIndices : [],
     })),
   setColor: (color) => set({ color }),
   setLineWidth: (lineWidth) => set({ lineWidth }),
-  setSelectedIndex: (selectedIndex) => set({ selectedIndex }),
+  setSelectedIndices: (selectedIndices) =>
+    set({ selectedIndices: [...new Set(selectedIndices)].sort((a, b) => a - b) }),
 
   commitStroke: (stroke) =>
     set((s) => {
@@ -205,12 +230,11 @@ export const useBoardStore = create<BoardState>()((set) => ({
       if (!stroke) return s;
       return {
         strokes: [...s.strokes.slice(0, index), ...s.strokes.slice(index + 1)],
-        selectedIndex:
-          s.selectedIndex === index
-            ? null
-            : s.selectedIndex !== null && s.selectedIndex > index
-              ? s.selectedIndex - 1
-              : s.selectedIndex,
+        selectedIndices: s.selectedIndices.flatMap((selectedIndex) =>
+          selectedIndex === index
+            ? []
+            : [selectedIndex > index ? selectedIndex - 1 : selectedIndex],
+        ),
         undoStack: [...s.undoStack, { kind: "remove", index, stroke }],
         redoStack: [],
         canUndo: true,
@@ -218,10 +242,22 @@ export const useBoardStore = create<BoardState>()((set) => ({
       };
     }),
 
-  deleteSelectedStroke: () => {
-    const { selectedIndex, removeStrokeAt } = useBoardStore.getState();
-    if (selectedIndex !== null) removeStrokeAt(selectedIndex);
-  },
+  deleteSelectedStrokes: () =>
+    set((s) => {
+      const changes = s.selectedIndices.flatMap((index) => {
+        const stroke = s.strokes[index];
+        return stroke ? [{ index, stroke }] : [];
+      });
+      if (changes.length === 0) return { selectedIndices: [] };
+      return {
+        strokes: applyRemovals(s.strokes, changes),
+        selectedIndices: [],
+        undoStack: [...s.undoStack, { kind: "remove-many", changes }],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
 
   replaceStrokeAt: (index, after) =>
     set((s) => {
@@ -266,6 +302,8 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? undoErase(s.strokes, entry.changes)
+          : entry.kind === "remove-many"
+          ? restoreRemovedStrokes(s.strokes, entry.changes)
           : entry.kind === "replace" || entry.kind === "replace-many"
           ? applyReplacements(s.strokes, entry.changes, "before")
           : entry.kind === "add"
@@ -277,7 +315,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
             ];
       return {
         strokes,
-        selectedIndex: null,
+        selectedIndices: [],
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, entry],
         canUndo: s.undoStack.length - 1 > 0,
@@ -292,6 +330,8 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? redoErase(s.strokes, entry)
+          : entry.kind === "remove-many"
+          ? applyRemovals(s.strokes, entry.changes)
           : entry.kind === "replace" || entry.kind === "replace-many"
           ? applyReplacements(s.strokes, entry.changes, "after")
           : entry.kind === "add"
@@ -303,7 +343,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
           : [...s.strokes.slice(0, entry.index), ...s.strokes.slice(entry.index + 1)];
       return {
         strokes,
-        selectedIndex: null,
+        selectedIndices: [],
         undoStack: [...s.undoStack, entry],
         redoStack: s.redoStack.slice(0, -1),
         canUndo: true,
@@ -318,7 +358,7 @@ export const useBoardStore = create<BoardState>()((set) => ({
       redoStack: [],
       canUndo: false,
       canRedo: false,
-      selectedIndex: null,
+      selectedIndices: [],
     }),
 
   resetView: () => {

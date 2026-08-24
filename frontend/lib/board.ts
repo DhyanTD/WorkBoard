@@ -205,6 +205,54 @@ export const translateStroke = (stroke: Stroke, delta: Point): Stroke => ({
   },
 });
 
+/** Scales a canvas item from one selection rectangle into another. */
+export const resizeStroke = (
+  stroke: Stroke,
+  from: Bounds,
+  to: Bounds,
+): Stroke => {
+  const fromWidth = from.maxX - from.minX;
+  const fromHeight = from.maxY - from.minY;
+  if (fromWidth === 0 || fromHeight === 0) return stroke;
+
+  const scaleX = (to.maxX - to.minX) / fromWidth;
+  const scaleY = (to.maxY - to.minY) / fromHeight;
+  const points = stroke.points.map((point) => ({
+    x: to.minX + (point.x - from.minX) * scaleX,
+    y: to.minY + (point.y - from.minY) * scaleY,
+  }));
+  if (points.length === 0) return stroke;
+
+  const fontSize = isTextTool(stroke.tool)
+    ? Math.max(
+        1,
+        (stroke.fontSize ?? DEFAULT_TEXT_FONT_SIZE) *
+          Math.sqrt(Math.abs(scaleX * scaleY)),
+      )
+    : stroke.fontSize;
+  let bounds: Bounds;
+  if (isTextTool(stroke.tool)) {
+    bounds = boundsFromText(points[0], stroke.text ?? "", fontSize ?? 1);
+  } else if (isFixedGeometryTool(stroke.tool) && points.length > 1) {
+    bounds = boundsFromFixedGeometry(
+      stroke.tool,
+      points[0],
+      points[points.length - 1],
+      stroke.lineWidth,
+    );
+  } else {
+    bounds = boundsFromPoint(points[0]);
+    for (let index = 1; index < points.length; index += 1) {
+      bounds.minX = Math.min(bounds.minX, points[index].x);
+      bounds.minY = Math.min(bounds.minY, points[index].y);
+      bounds.maxX = Math.max(bounds.maxX, points[index].x);
+      bounds.maxY = Math.max(bounds.maxY, points[index].y);
+    }
+  }
+
+  return { ...stroke, points, bounds, fontSize };
+};
+
 /** Expands mutable in-progress stroke bounds without allocating per point. */
 export const includePoint = (bounds: Bounds, point: Point) => {
   bounds.minX = Math.min(bounds.minX, point.x);

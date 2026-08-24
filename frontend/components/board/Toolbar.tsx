@@ -29,14 +29,14 @@ export default function Toolbar() {
   const lineWidth = useBoardStore((s) => s.lineWidth);
   const canUndo = useBoardStore((s) => s.canUndo);
   const canRedo = useBoardStore((s) => s.canRedo);
-  const selectedIndex = useBoardStore((s) => s.selectedIndex);
+  const selectedIndices = useBoardStore((s) => s.selectedIndices);
 
   const setTool = useBoardStore((s) => s.setTool);
   const setColor = useBoardStore((s) => s.setColor);
   const setLineWidth = useBoardStore((s) => s.setLineWidth);
   const undo = useBoardStore((s) => s.undo);
   const redo = useBoardStore((s) => s.redo);
-  const deleteSelectedStroke = useBoardStore((s) => s.deleteSelectedStroke);
+  const deleteSelectedStrokes = useBoardStore((s) => s.deleteSelectedStrokes);
   const clear = useBoardStore((s) => s.clear);
   const resetView = useBoardStore((s) => s.resetView);
 
@@ -87,11 +87,11 @@ export default function Toolbar() {
       <Divider />
 
       <ActionButton
-        onClick={deleteSelectedStroke}
-        disabled={selectedIndex === null}
+        onClick={deleteSelectedStrokes}
+        disabled={selectedIndices.length === 0}
         danger
       >
-        Delete
+        Delete{selectedIndices.length > 1 ? ` (${selectedIndices.length})` : ""}
       </ActionButton>
       <ActionButton onClick={undo} disabled={!canUndo}>
         Undo

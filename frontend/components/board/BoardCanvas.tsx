@@ -28,9 +28,11 @@ import {
   MAX_CANVAS_DPR,
   paintLastSegment,
   renderStroke,
+  resizeStroke,
   screenToWorld,
   shouldSamplePoint,
   translateStroke,
+  type Bounds,
   type Point,
   type BoardRenderPalette,
   type Stroke,
@@ -57,35 +59,193 @@ type TextEditor = {
   fontSize: number;
 };
 
-/** Creates a temporary arrow preview with only the endpoints bound to a shape moved. */
-const translateBoundArrow = (arrow: Stroke, shapeId: string, delta: Point): Stroke => {
-  if (
-    arrow.tool !== "arrow" ||
-    arrow.points.length < 2 ||
-    (arrow.startBindingId !== shapeId && arrow.endBindingId !== shapeId)
-  ) {
-    return arrow;
+type ResizeHandle = "nw" | "ne" | "se" | "sw";
+
+type SelectionInteraction =
+  | {
+      kind: "marquee";
+      start: Point;
+      current: Point;
+      baseIndices: number[];
+      moved: boolean;
+    }
+  | {
+      kind: "move";
+      start: Point;
+      originals: Map<number, Stroke>;
+      preview: Map<number, Stroke>;
+      moved: boolean;
+    }
+  | {
+      kind: "resize";
+      start: Point;
+      startBounds: Bounds;
+      handle: ResizeHandle;
+      originals: Map<number, Stroke>;
+      preview: Map<number, Stroke>;
+      moved: boolean;
+    };
+
+const boundsFromSelectionPoints = (a: Point, b: Point): Bounds => ({
+  minX: Math.min(a.x, b.x),
+  minY: Math.min(a.y, b.y),
+  maxX: Math.max(a.x, b.x),
+  maxY: Math.max(a.y, b.y),
+});
+
+const getSelectionBounds = (
+  strokes: Stroke[],
+  indices: number[],
+  preview?: Map<number, Stroke>,
+): Bounds | null => {
+  let combined: Bounds | null = null;
+  for (const index of indices) {
+    const stroke = preview?.get(index) ?? strokes[index];
+    if (!stroke) continue;
+    if (!combined) {
+      combined = { ...stroke.bounds };
+      continue;
+    }
+    combined.minX = Math.min(combined.minX, stroke.bounds.minX);
+    combined.minY = Math.min(combined.minY, stroke.bounds.minY);
+    combined.maxX = Math.max(combined.maxX, stroke.bounds.maxX);
+    combined.maxY = Math.max(combined.maxY, stroke.bounds.maxY);
+  }
+  return combined;
+};
+
+const normalizeSelectionBounds = (bounds: Bounds, minimumSize: number): Bounds => {
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+  const halfWidth = Math.max((bounds.maxX - bounds.minX) / 2, minimumSize / 2);
+  const halfHeight = Math.max((bounds.maxY - bounds.minY) / 2, minimumSize / 2);
+  return {
+    minX: centerX - halfWidth,
+    minY: centerY - halfHeight,
+    maxX: centerX + halfWidth,
+    maxY: centerY + halfHeight,
+  };
+};
+
+const getSelectionFrame = (bounds: Bounds, scale: number): Bounds => {
+  const normalized = normalizeSelectionBounds(bounds, 14 / scale);
+  const padding = 6 / scale;
+  return {
+    minX: normalized.minX - padding,
+    minY: normalized.minY - padding,
+    maxX: normalized.maxX + padding,
+    maxY: normalized.maxY + padding,
+  };
+};
+
+const isPointInsideBounds = (point: Point, bounds: Bounds) =>
+  point.x >= bounds.minX &&
+  point.x <= bounds.maxX &&
+  point.y >= bounds.minY &&
+  point.y <= bounds.maxY;
+
+const doBoundsIntersect = (a: Bounds, b: Bounds) =>
+  a.minX <= b.maxX &&
+  a.maxX >= b.minX &&
+  a.minY <= b.maxY &&
+  a.maxY >= b.minY;
+
+const getResizeHandles = (bounds: Bounds) => ({
+  nw: { x: bounds.minX, y: bounds.minY },
+  ne: { x: bounds.maxX, y: bounds.minY },
+  se: { x: bounds.maxX, y: bounds.maxY },
+  sw: { x: bounds.minX, y: bounds.maxY },
+});
+
+const findResizeHandle = (
+  point: Point,
+  selectionBounds: Bounds,
+  scale: number,
+): ResizeHandle | null => {
+  const handles = getResizeHandles(getSelectionFrame(selectionBounds, scale));
+  const radius = 10 / scale;
+  for (const handle of Object.keys(handles) as ResizeHandle[]) {
+    const position = handles[handle];
+    if (Math.hypot(point.x - position.x, point.y - position.y) <= radius) {
+      return handle;
+    }
+  }
+  return null;
+};
+
+const getResizedBounds = (
+  start: Bounds,
+  handle: ResizeHandle,
+  delta: Point,
+  minimumSize: number,
+): Bounds => {
+  const west = handle === "nw" || handle === "sw";
+  const north = handle === "nw" || handle === "ne";
+  return {
+    minX: west ? Math.min(start.minX + delta.x, start.maxX - minimumSize) : start.minX,
+    minY: north ? Math.min(start.minY + delta.y, start.maxY - minimumSize) : start.minY,
+    maxX: west ? start.maxX : Math.max(start.maxX + delta.x, start.minX + minimumSize),
+    maxY: north ? start.maxY : Math.max(start.maxY + delta.y, start.minY + minimumSize),
+  };
+};
+
+const getStrokeCenter = (stroke: Stroke): Point => ({
+  x: (stroke.bounds.minX + stroke.bounds.maxX) / 2,
+  y: (stroke.bounds.minY + stroke.bounds.maxY) / 2,
+});
+
+/** Keeps unselected connector endpoints attached while selected shapes transform. */
+const updateBoundArrow = (
+  arrow: Stroke,
+  changedShapes: Map<string, Stroke>,
+): Stroke => {
+  if (arrow.tool !== "arrow" || arrow.points.length < 2) return arrow;
+  const startShape = arrow.startBindingId
+    ? changedShapes.get(arrow.startBindingId)
+    : undefined;
+  const endShape = arrow.endBindingId
+    ? changedShapes.get(arrow.endBindingId)
+    : undefined;
+  if (!startShape && !endShape) return arrow;
+
+  let start = arrow.points[0];
+  let end = arrow.points[arrow.points.length - 1];
+  if (startShape && endShape) {
+    start = getShapeConnectionPoint(startShape, getStrokeCenter(endShape));
+    end = getShapeConnectionPoint(endShape, getStrokeCenter(startShape));
+  } else if (startShape) {
+    start = getShapeConnectionPoint(startShape, end);
+  } else if (endShape) {
+    end = getShapeConnectionPoint(endShape, start);
   }
 
-  const points = arrow.points.map((point, index) => {
-    const isBoundEndpoint =
-      (index === 0 && arrow.startBindingId === shapeId) ||
-      (index === arrow.points.length - 1 && arrow.endBindingId === shapeId);
-    return isBoundEndpoint
-      ? { x: point.x + delta.x, y: point.y + delta.y }
-      : point;
-  });
+  const points = [start, end];
   return {
     ...arrow,
     points,
-    bounds: boundsFromFixedGeometry(
-      "arrow",
-      points[0],
-      points[points.length - 1],
-      arrow.lineWidth,
-    ),
+    bounds: boundsFromFixedGeometry("arrow", start, end, arrow.lineWidth),
   };
 };
+
+const getChangedShapes = (preview: Map<number, Stroke>) => {
+  const shapes = new Map<string, Stroke>();
+  for (const stroke of preview.values()) {
+    if (isShapeTool(stroke.tool) && stroke.id) shapes.set(stroke.id, stroke);
+  }
+  return shapes;
+};
+
+const getSelectionStrokes = (strokes: Stroke[], indices: number[]) => {
+  const selected = new Map<number, Stroke>();
+  for (const index of indices) {
+    const stroke = strokes[index];
+    if (stroke) selected.set(index, stroke);
+  }
+  return selected;
+};
+
+const areSelectionsEqual = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
 
 export default function BoardCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -94,14 +254,13 @@ export default function BoardCanvas() {
   const strokes = useBoardStore((s) => s.strokes);
   const redoStack = useBoardStore((s) => s.redoStack);
   const cameraEpoch = useBoardStore((s) => s.cameraEpoch);
-  const selectedIndex = useBoardStore((s) => s.selectedIndex);
+  const selectedIndices = useBoardStore((s) => s.selectedIndices);
   const commitStroke = useBoardStore((s) => s.commitStroke);
   const eraseWithStroke = useBoardStore((s) => s.eraseWithStroke);
   const removeStrokeAt = useBoardStore((s) => s.removeStrokeAt);
-  const deleteSelectedStroke = useBoardStore((s) => s.deleteSelectedStroke);
-  const replaceStrokeAt = useBoardStore((s) => s.replaceStrokeAt);
+  const deleteSelectedStrokes = useBoardStore((s) => s.deleteSelectedStrokes);
   const replaceStrokes = useBoardStore((s) => s.replaceStrokes);
-  const setSelectedIndex = useBoardStore((s) => s.setSelectedIndex);
+  const setSelectedIndices = useBoardStore((s) => s.setSelectedIndices);
 
   // Latest UI values for pointer handlers (avoids re-creating handlers).
   const toolRef = useRef(tool);
@@ -125,19 +284,16 @@ export default function BoardCanvas() {
   const currentRef = useRef<Stroke | null>(null);
   const drawingRef = useRef(false);
   const panningRef = useRef(false);
-  const movingSelectionRef = useRef(false);
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const offsetStartRef = useRef<Point>({ x: 0, y: 0 });
-  const selectionStartRef = useRef<Point>({ x: 0, y: 0 });
-  const selectedStrokeStartRef = useRef<Stroke | null>(null);
-  const movingStrokeRef = useRef<Stroke | null>(null);
+  const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
   const connectorSourceIndexRef = useRef<number | null>(null);
   const connectorTargetIndexRef = useRef<number | null>(null);
   const lastEmptySelectionTapRef = useRef<{
     screen: Point;
     time: number;
   } | null>(null);
-  const selectedIndexRef = useRef<number | null>(null);
+  const selectedIndicesRef = useRef<number[]>([]);
   const textInputRef = useRef<HTMLInputElement>(null);
   const textEditorRef = useRef<TextEditor | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
@@ -162,10 +318,10 @@ export default function BoardCanvas() {
       bounds: boundsFromText(editor.world, text, DEFAULT_TEXT_FONT_SIZE),
     });
     if (selectAfterCommit) {
-      selectedIndexRef.current = textIndex;
-      setSelectedIndex(textIndex);
+      selectedIndicesRef.current = [textIndex];
+      setSelectedIndices([textIndex]);
     }
-  }, [commitStroke, setSelectedIndex]);
+  }, [commitStroke, setSelectedIndices]);
 
   const startTextEditor = useCallback(
     (world: Point, screen: Point) => {
@@ -177,12 +333,12 @@ export default function BoardCanvas() {
         color: colorRef.current,
         fontSize: DEFAULT_TEXT_FONT_SIZE,
       };
-      selectedIndexRef.current = null;
-      setSelectedIndex(null);
+      selectedIndicesRef.current = [];
+      setSelectedIndices([]);
       textEditorRef.current = editor;
       setTextEditor(editor);
     },
-    [commitTextEditor, setSelectedIndex],
+    [commitTextEditor, setSelectedIndices],
   );
 
   useEffect(() => {
@@ -238,27 +394,15 @@ export default function BoardCanvas() {
       -offset.x * dpr * scale,
       -offset.y * dpr * scale,
     );
-    const selectedStrokeStart = selectedStrokeStartRef.current;
-    const movingStroke = movingStrokeRef.current;
-    const selectedShapeId =
-      selectedStrokeStart && isShapeTool(selectedStrokeStart.tool)
-        ? selectedStrokeStart.id
+    const interaction = selectionInteractionRef.current;
+    const preview =
+      interaction?.kind === "move" || interaction?.kind === "resize"
+        ? interaction.preview
         : undefined;
-    const selectionDelta =
-      selectedStrokeStart && selectedShapeId && movingStroke
-        ? {
-            x: movingStroke.points[0].x - selectedStrokeStart.points[0].x,
-            y: movingStroke.points[0].y - selectedStrokeStart.points[0].y,
-          }
-        : null;
+    const changedShapes = preview ? getChangedShapes(preview) : new Map();
     for (let index = 0; index < strokesRef.current.length; index += 1) {
-      let stroke =
-        index === selectedIndexRef.current && movingStroke
-          ? movingStroke
-          : strokesRef.current[index];
-      if (selectedShapeId && selectionDelta) {
-        stroke = translateBoundArrow(stroke, selectedShapeId, selectionDelta);
-      }
+      let stroke = preview?.get(index) ?? strokesRef.current[index];
+      if (!preview?.has(index)) stroke = updateBoundArrow(stroke, changedShapes);
       if (isStrokeVisible(stroke, viewport)) renderStroke(ctx, stroke, palette);
     }
     const current = currentRef.current;
@@ -288,25 +432,76 @@ export default function BoardCanvas() {
       renderStroke(ctx, current, palette);
     }
 
-    const activeSelection = selectedIndexRef.current;
-    if (activeSelection !== null) {
-      const selectedStroke =
-        movingStrokeRef.current ?? strokesRef.current[activeSelection];
-      if (selectedStroke) {
-        const padding = 6 / scale;
-        const { minX, minY, maxX, maxY } = selectedStroke.bounds;
-        ctx.save();
-        ctx.strokeStyle = "#2563eb";
-        ctx.lineWidth = 1.5 / scale;
-        ctx.setLineDash([4 / scale, 3 / scale]);
-        ctx.strokeRect(
-          minX - padding,
-          minY - padding,
-          maxX - minX + padding * 2,
-          maxY - minY + padding * 2,
-        );
-        ctx.restore();
+    if (interaction?.kind === "marquee") {
+      const marquee = boundsFromSelectionPoints(
+        interaction.start,
+        interaction.current,
+      );
+      ctx.save();
+      ctx.fillStyle = "rgba(37, 99, 235, 0.10)";
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 1.25 / scale;
+      ctx.setLineDash([5 / scale, 3 / scale]);
+      ctx.fillRect(
+        marquee.minX,
+        marquee.minY,
+        marquee.maxX - marquee.minX,
+        marquee.maxY - marquee.minY,
+      );
+      ctx.strokeRect(
+        marquee.minX,
+        marquee.minY,
+        marquee.maxX - marquee.minX,
+        marquee.maxY - marquee.minY,
+      );
+      ctx.restore();
+    }
+
+    const selectionBounds = getSelectionBounds(
+      strokesRef.current,
+      selectedIndicesRef.current,
+      preview,
+    );
+    if (selectionBounds) {
+      const frame = getSelectionFrame(selectionBounds, scale);
+      ctx.save();
+      if (selectedIndicesRef.current.length > 1) {
+        ctx.strokeStyle = "rgba(59, 130, 246, 0.45)";
+        ctx.lineWidth = 1 / scale;
+        ctx.setLineDash([2 / scale, 3 / scale]);
+        for (const index of selectedIndicesRef.current) {
+          const stroke = preview?.get(index) ?? strokesRef.current[index];
+          if (!stroke) continue;
+          const { minX, minY, maxX, maxY } = stroke.bounds;
+          ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        }
       }
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 1.5 / scale;
+      ctx.setLineDash([5 / scale, 3 / scale]);
+      ctx.strokeRect(
+        frame.minX,
+        frame.minY,
+        frame.maxX - frame.minX,
+        frame.maxY - frame.minY,
+      );
+      ctx.setLineDash([]);
+      const handleSize = 8 / scale;
+      ctx.fillStyle = palette.background;
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 1.75 / scale;
+      for (const position of Object.values(getResizeHandles(frame))) {
+        ctx.beginPath();
+        ctx.rect(
+          position.x - handleSize / 2,
+          position.y - handleSize / 2,
+          handleSize,
+          handleSize,
+        );
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     ctx.restore();
   }, []);
@@ -333,19 +528,22 @@ export default function BoardCanvas() {
   // Redraw when committed strokes / undo / redo / clear / camera reset change.
   useEffect(() => {
     strokesRef.current = strokes;
-    if (selectedIndexRef.current !== null && selectedIndexRef.current >= strokes.length) {
-      selectedIndexRef.current = null;
-      setSelectedIndex(null);
+    const validSelection = selectedIndicesRef.current.filter(
+      (index) => index >= 0 && index < strokes.length,
+    );
+    if (validSelection.length !== selectedIndicesRef.current.length) {
+      selectedIndicesRef.current = validSelection;
+      setSelectedIndices(validSelection);
     }
     scheduleRedraw();
-  }, [strokes, scheduleRedraw, setSelectedIndex]);
+  }, [strokes, scheduleRedraw, setSelectedIndices]);
   useEffect(() => {
     scheduleRedraw();
   }, [redoStack, cameraEpoch, scheduleRedraw]);
   useEffect(() => {
-    selectedIndexRef.current = selectedIndex;
+    selectedIndicesRef.current = selectedIndices;
     scheduleRedraw();
-  }, [scheduleRedraw, selectedIndex]);
+  }, [scheduleRedraw, selectedIndices]);
 
   const resize = useCallback(() => {
     const canvas = canvasRef.current;
@@ -369,6 +567,16 @@ export default function BoardCanvas() {
     window.addEventListener(THEME_CHANGE_EVENT, scheduleRedraw);
     return () => window.removeEventListener(THEME_CHANGE_EVENT, scheduleRedraw);
   }, [scheduleRedraw]);
+
+  const updateSelection = useCallback(
+    (indices: number[]) => {
+      const next = [...new Set(indices)].sort((a, b) => a - b);
+      selectedIndicesRef.current = next;
+      setSelectedIndices(next);
+      scheduleRedraw();
+    },
+    [scheduleRedraw, setSelectedIndices],
+  );
 
   const onPointerDown = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
@@ -398,6 +606,7 @@ export default function BoardCanvas() {
       if (ctrlKey || toolRef.current === "hand") {
         canvas.setPointerCapture(e.pointerId);
         panningRef.current = true;
+        canvas.style.cursor = "grabbing";
         panStartRef.current = getScreenPos(e);
         offsetStartRef.current = { ...camera.offset };
         return;
@@ -406,38 +615,113 @@ export default function BoardCanvas() {
       if (isSelectionTool(toolRef.current)) {
         const screen = getScreenPos(e);
         const world = screenToWorld(camera.offset, camera.scale, screen);
+        const activeIndices = selectedIndicesRef.current;
+        const activeBounds = getSelectionBounds(
+          strokesRef.current,
+          activeIndices,
+        );
+        const resizeHandle = activeBounds
+          ? findResizeHandle(world, activeBounds, camera.scale)
+          : null;
+        if (activeBounds && resizeHandle && activeIndices.length > 0) {
+          const originals = getSelectionStrokes(
+            strokesRef.current,
+            activeIndices,
+          );
+          canvas.setPointerCapture(e.pointerId);
+          selectionInteractionRef.current = {
+            kind: "resize",
+            start: world,
+            startBounds: normalizeSelectionBounds(
+              activeBounds,
+              14 / camera.scale,
+            ),
+            handle: resizeHandle,
+            originals,
+            preview: new Map(originals),
+            moved: false,
+          };
+          canvas.style.cursor =
+            resizeHandle === "nw" || resizeHandle === "se"
+              ? "nwse-resize"
+              : "nesw-resize";
+          return;
+        }
+
         const hitIndex = findTopmostSelectableStrokeAtPoint(
           strokesRef.current,
           world,
           6 / camera.scale,
         );
-        if (hitIndex === -1) {
-          const previousTap = lastEmptySelectionTapRef.current;
-          const dx = previousTap ? screen.x - previousTap.screen.x : 0;
-          const dy = previousTap ? screen.y - previousTap.screen.y : 0;
-          const doubleTap =
-            e.detail >= 2 ||
-            (previousTap !== null &&
-              e.timeStamp - previousTap.time < 350 &&
-              dx * dx + dy * dy < 256);
-          lastEmptySelectionTapRef.current = doubleTap
-            ? null
-            : { screen, time: e.timeStamp };
-          selectedIndexRef.current = null;
-          setSelectedIndex(null);
-          if (doubleTap) startTextEditor(world, screen);
+
+        if (e.shiftKey && hitIndex !== -1) {
+          lastEmptySelectionTapRef.current = null;
+          updateSelection(
+            activeIndices.includes(hitIndex)
+              ? activeIndices.filter((index) => index !== hitIndex)
+              : [...activeIndices, hitIndex],
+          );
           return;
         }
 
-        lastEmptySelectionTapRef.current = null;
-        selectedIndexRef.current = hitIndex;
-        setSelectedIndex(hitIndex);
+        const insideActiveSelection =
+          activeBounds !== null &&
+          isPointInsideBounds(
+            world,
+            getSelectionFrame(activeBounds, camera.scale),
+          );
+        if (hitIndex !== -1 || (insideActiveSelection && !e.shiftKey)) {
+          lastEmptySelectionTapRef.current = null;
+          const nextIndices =
+            hitIndex !== -1 && !activeIndices.includes(hitIndex)
+              ? [hitIndex]
+              : activeIndices;
+          updateSelection(nextIndices);
+          const originals = getSelectionStrokes(
+            strokesRef.current,
+            nextIndices,
+          );
+          canvas.setPointerCapture(e.pointerId);
+          selectionInteractionRef.current = {
+            kind: "move",
+            start: world,
+            originals,
+            preview: new Map(originals),
+            moved: false,
+          };
+          canvas.style.cursor = "move";
+          return;
+        }
 
+        const previousTap = lastEmptySelectionTapRef.current;
+        const dx = previousTap ? screen.x - previousTap.screen.x : 0;
+        const dy = previousTap ? screen.y - previousTap.screen.y : 0;
+        const doubleTap =
+          e.detail >= 2 ||
+          (previousTap !== null &&
+            e.timeStamp - previousTap.time < 350 &&
+            dx * dx + dy * dy < 256);
+        lastEmptySelectionTapRef.current = doubleTap
+          ? null
+          : { screen, time: e.timeStamp };
+        if (doubleTap) {
+          updateSelection([]);
+          startTextEditor(world, screen);
+          return;
+        }
+
+        const baseIndices = e.shiftKey ? activeIndices : [];
+        if (!e.shiftKey) updateSelection([]);
         canvas.setPointerCapture(e.pointerId);
-        movingSelectionRef.current = true;
-        selectionStartRef.current = world;
-        selectedStrokeStartRef.current = strokesRef.current[hitIndex];
-        movingStrokeRef.current = null;
+        selectionInteractionRef.current = {
+          kind: "marquee",
+          start: world,
+          current: world,
+          baseIndices,
+          moved: false,
+        };
+        canvas.style.cursor = "crosshair";
+        scheduleRedraw();
         return;
       }
 
@@ -464,7 +748,13 @@ export default function BoardCanvas() {
       };
       scheduleRedraw();
     },
-    [getScreenPos, removeStrokeAt, scheduleRedraw, setSelectedIndex, startTextEditor],
+    [
+      getScreenPos,
+      removeStrokeAt,
+      scheduleRedraw,
+      startTextEditor,
+      updateSelection,
+    ],
   );
 
   const onPointerMove = useCallback(
@@ -483,13 +773,96 @@ export default function BoardCanvas() {
         scheduleRedraw();
         return;
       }
-      if (movingSelectionRef.current && selectedStrokeStartRef.current) {
+      const selectionInteraction = selectionInteractionRef.current;
+      if (selectionInteraction) {
         const world = screenToWorld(camera.offset, camera.scale, getScreenPos(e));
-        movingStrokeRef.current = translateStroke(selectedStrokeStartRef.current, {
-          x: world.x - selectionStartRef.current.x,
-          y: world.y - selectionStartRef.current.y,
-        });
+        const delta = {
+          x: world.x - selectionInteraction.start.x,
+          y: world.y - selectionInteraction.start.y,
+        };
+        if (Math.hypot(delta.x, delta.y) * camera.scale >= 2) {
+          selectionInteraction.moved = true;
+          lastEmptySelectionTapRef.current = null;
+        }
+
+        if (selectionInteraction.kind === "marquee") {
+          selectionInteraction.current = world;
+          const marquee = boundsFromSelectionPoints(
+            selectionInteraction.start,
+            world,
+          );
+          const hits = strokesRef.current.flatMap((stroke, index) =>
+            stroke.tool !== "eraser" && doBoundsIntersect(stroke.bounds, marquee)
+              ? [index]
+              : [],
+          );
+          const next = [
+            ...new Set([...selectionInteraction.baseIndices, ...hits]),
+          ].sort((a, b) => a - b);
+          if (!areSelectionsEqual(next, selectedIndicesRef.current)) {
+            updateSelection(next);
+          }
+        } else if (selectionInteraction.kind === "move") {
+          selectionInteraction.preview = new Map(
+            [...selectionInteraction.originals].map(([index, stroke]) => [
+              index,
+              translateStroke(stroke, delta),
+            ]),
+          );
+        } else {
+          const nextBounds = getResizedBounds(
+            selectionInteraction.startBounds,
+            selectionInteraction.handle,
+            delta,
+            8 / camera.scale,
+          );
+          selectionInteraction.preview = new Map(
+            [...selectionInteraction.originals].map(([index, stroke]) => [
+              index,
+              resizeStroke(stroke, selectionInteraction.startBounds, nextBounds),
+            ]),
+          );
+        }
         scheduleRedraw();
+        return;
+      }
+
+      if (isSelectionTool(toolRef.current)) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const world = screenToWorld(
+            camera.offset,
+            camera.scale,
+            getScreenPos(e),
+          );
+          const bounds = getSelectionBounds(
+            strokesRef.current,
+            selectedIndicesRef.current,
+          );
+          const handle = bounds
+            ? findResizeHandle(world, bounds, camera.scale)
+            : null;
+          if (handle) {
+            canvas.style.cursor =
+              handle === "nw" || handle === "se"
+                ? "nwse-resize"
+                : "nesw-resize";
+          } else {
+            const overSelection =
+              bounds !== null &&
+              isPointInsideBounds(
+                world,
+                getSelectionFrame(bounds, camera.scale),
+              );
+            const overStroke =
+              findTopmostSelectableStrokeAtPoint(
+                strokesRef.current,
+                world,
+                6 / camera.scale,
+              ) !== -1;
+            canvas.style.cursor = overSelection || overStroke ? "move" : "crosshair";
+          }
+        }
         return;
       }
       if (!drawingRef.current || !currentRef.current) return;
@@ -560,40 +933,41 @@ export default function BoardCanvas() {
         ctx.restore();
       }
     },
-    [getScreenPos, scheduleRedraw],
+    [getScreenPos, scheduleRedraw, updateSelection],
   );
 
   const endStroke = useCallback(() => {
     if (panningRef.current) {
       panningRef.current = false;
+      if (canvasRef.current) {
+        canvasRef.current.style.cursor =
+          toolRef.current === "hand" ? "grab" : "crosshair";
+      }
       return;
     }
-    if (movingSelectionRef.current) {
-      movingSelectionRef.current = false;
-      const index = selectedIndexRef.current;
-      if (index !== null && movingStrokeRef.current) {
-        const before = selectedStrokeStartRef.current;
-        const after = movingStrokeRef.current;
-        if (before && isShapeTool(before.tool) && before.id) {
-          const delta = {
-            x: after.points[0].x - before.points[0].x,
-            y: after.points[0].y - before.points[0].y,
-          };
-          const changes = [{ index, before, after }];
-          for (let arrowIndex = 0; arrowIndex < strokesRef.current.length; arrowIndex += 1) {
-            const arrow = strokesRef.current[arrowIndex];
-            const movedArrow = translateBoundArrow(arrow, before.id, delta);
-            if (movedArrow !== arrow) {
-              changes.push({ index: arrowIndex, before: arrow, after: movedArrow });
-            }
-          }
-          replaceStrokes(changes);
-        } else {
-          replaceStrokeAt(index, after);
+    const selectionInteraction = selectionInteractionRef.current;
+    if (selectionInteraction) {
+      selectionInteractionRef.current = null;
+      if (
+        selectionInteraction.kind !== "marquee" &&
+        selectionInteraction.moved
+      ) {
+        const changes = [...selectionInteraction.preview].flatMap(
+          ([index, after]) => {
+            const before = selectionInteraction.originals.get(index);
+            return before ? [{ index, before, after }] : [];
+          },
+        );
+        const changedShapes = getChangedShapes(selectionInteraction.preview);
+        for (let index = 0; index < strokesRef.current.length; index += 1) {
+          if (selectionInteraction.preview.has(index)) continue;
+          const before = strokesRef.current[index];
+          const after = updateBoundArrow(before, changedShapes);
+          if (after !== before) changes.push({ index, before, after });
         }
+        replaceStrokes(changes);
       }
-      selectedStrokeStartRef.current = null;
-      movingStrokeRef.current = null;
+      if (canvasRef.current) canvasRef.current.style.cursor = "crosshair";
       scheduleRedraw();
       return;
     }
@@ -610,7 +984,7 @@ export default function BoardCanvas() {
     connectorSourceIndexRef.current = null;
     connectorTargetIndexRef.current = null;
     scheduleRedraw();
-  }, [commitStroke, eraseWithStroke, replaceStrokeAt, replaceStrokes, scheduleRedraw]);
+  }, [commitStroke, eraseWithStroke, replaceStrokes, scheduleRedraw]);
 
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
@@ -619,21 +993,19 @@ export default function BoardCanvas() {
         return;
       }
       if (e.key === "Escape") {
-        selectedIndexRef.current = null;
-        setSelectedIndex(null);
+        updateSelection([]);
         return;
       }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
-      const index = selectedIndexRef.current;
-      if (index === null) return;
+      if (selectedIndicesRef.current.length === 0) return;
       e.preventDefault();
-      deleteSelectedStroke();
-      selectedIndexRef.current = null;
+      deleteSelectedStrokes();
+      selectedIndicesRef.current = [];
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelectedStroke, setSelectedIndex]);
+  }, [deleteSelectedStrokes, updateSelection]);
 
   const onPointerUp = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
@@ -692,7 +1064,7 @@ export default function BoardCanvas() {
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none select-none"
         style={{
-          cursor: tool === "hand" ? "grab" : isSelectionTool(tool) ? "default" : "crosshair",
+          cursor: tool === "hand" ? "grab" : "crosshair",
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
