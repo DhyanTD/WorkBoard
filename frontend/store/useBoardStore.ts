@@ -5,6 +5,7 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   splitFreehandStrokeByEraser,
+  translateStroke,
   zoomAt,
   type Point,
   type Stroke,
@@ -61,6 +62,10 @@ type HistoryEntry = {
 } | {
   kind: "remove-many";
   changes: RemoveChange[];
+} | {
+  kind: "add-many";
+  index: number;
+  strokes: Stroke[];
 };
 
 const applyReplacements = (
@@ -91,14 +96,16 @@ const applyRemovals = (strokes: Stroke[], changes: RemoveChange[]) => {
 
 let fallbackStrokeId = 0;
 
+const createStrokeId = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `stroke-${Date.now()}-${fallbackStrokeId++}`;
+
 const withStrokeId = (stroke: Stroke): Stroke =>
   stroke.id
     ? stroke
     : {
         ...stroke,
-        id:
-          globalThis.crypto?.randomUUID?.() ??
-          `stroke-${Date.now()}-${fallbackStrokeId++}`,
+        id: createStrokeId(),
       };
 
 const undoErase = (strokes: Stroke[], changes: EraseChange[]) => {
@@ -139,6 +146,9 @@ type BoardState = {
   canUndo: boolean;
   canRedo: boolean;
   selectedIndices: number[];
+  clipboardStrokes: Stroke[];
+  pasteCount: number;
+  canPaste: boolean;
   /** Incremented whenever the camera must be re-rendered (Reset View). */
   cameraEpoch: number;
   /** Reactive mirror of `camera.scale` so the toolbar can display it. */
@@ -152,6 +162,8 @@ type BoardState = {
   eraseWithStroke: (eraser: Stroke) => void;
   removeStrokeAt: (index: number) => void;
   deleteSelectedStrokes: () => void;
+  copySelectedStrokes: () => void;
+  pasteStrokes: () => void;
   replaceStrokeAt: (index: number, stroke: Stroke) => void;
   replaceStrokes: (changes: ReplaceChange[]) => void;
   undo: () => void;
@@ -174,6 +186,9 @@ export const useBoardStore = create<BoardState>()((set) => ({
   canUndo: false,
   canRedo: false,
   selectedIndices: [],
+  clipboardStrokes: [],
+  pasteCount: 0,
+  canPaste: false,
   cameraEpoch: 0,
   scale: 1,
 
@@ -259,6 +274,68 @@ export const useBoardStore = create<BoardState>()((set) => ({
       };
     }),
 
+  copySelectedStrokes: () =>
+    set((s) => {
+      const clipboardStrokes = s.selectedIndices.flatMap((index) => {
+        const stroke = s.strokes[index];
+        return stroke
+          ? [
+              {
+                ...stroke,
+                points: stroke.points.map((point) => ({ ...point })),
+                bounds: { ...stroke.bounds },
+              },
+            ]
+          : [];
+      });
+      return {
+        clipboardStrokes,
+        pasteCount: 0,
+        canPaste: clipboardStrokes.length > 0,
+      };
+    }),
+
+  pasteStrokes: () =>
+    set((s) => {
+      if (s.clipboardStrokes.length === 0) return s;
+
+      const newIds = s.clipboardStrokes.map(() => createStrokeId());
+      const idMap = new Map<string, string>();
+      s.clipboardStrokes.forEach((stroke, index) => {
+        if (stroke.id) idMap.set(stroke.id, newIds[index]);
+      });
+      const pasteOffset = 24 * (s.pasteCount + 1);
+      const pasted = s.clipboardStrokes.map((stroke, index) =>
+        translateStroke(
+          {
+            ...stroke,
+            id: newIds[index],
+            startBindingId: stroke.startBindingId
+              ? idMap.get(stroke.startBindingId)
+              : undefined,
+            endBindingId: stroke.endBindingId
+              ? idMap.get(stroke.endBindingId)
+              : undefined,
+          },
+          { x: pasteOffset, y: pasteOffset },
+        ),
+      );
+      const startIndex = s.strokes.length;
+      return {
+        tool: "select",
+        strokes: [...s.strokes, ...pasted],
+        selectedIndices: pasted.map((_, index) => startIndex + index),
+        pasteCount: s.pasteCount + 1,
+        undoStack: [
+          ...s.undoStack,
+          { kind: "add-many", index: startIndex, strokes: pasted },
+        ],
+        redoStack: [],
+        canUndo: true,
+        canRedo: false,
+      };
+    }),
+
   replaceStrokeAt: (index, after) =>
     set((s) => {
       const before = s.strokes[index];
@@ -302,6 +379,11 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? undoErase(s.strokes, entry.changes)
+          : entry.kind === "add-many"
+          ? [
+              ...s.strokes.slice(0, entry.index),
+              ...s.strokes.slice(entry.index + entry.strokes.length),
+            ]
           : entry.kind === "remove-many"
           ? restoreRemovedStrokes(s.strokes, entry.changes)
           : entry.kind === "replace" || entry.kind === "replace-many"
@@ -330,6 +412,12 @@ export const useBoardStore = create<BoardState>()((set) => ({
       const strokes =
         entry.kind === "erase"
           ? redoErase(s.strokes, entry)
+          : entry.kind === "add-many"
+          ? [
+              ...s.strokes.slice(0, entry.index),
+              ...entry.strokes,
+              ...s.strokes.slice(entry.index),
+            ]
           : entry.kind === "remove-many"
           ? applyRemovals(s.strokes, entry.changes)
           : entry.kind === "replace" || entry.kind === "replace-many"

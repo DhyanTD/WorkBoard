@@ -29,6 +29,7 @@ export default function Toolbar() {
   const lineWidth = useBoardStore((s) => s.lineWidth);
   const canUndo = useBoardStore((s) => s.canUndo);
   const canRedo = useBoardStore((s) => s.canRedo);
+  const canPaste = useBoardStore((s) => s.canPaste);
   const selectedIndices = useBoardStore((s) => s.selectedIndices);
 
   const setTool = useBoardStore((s) => s.setTool);
@@ -36,6 +37,8 @@ export default function Toolbar() {
   const setLineWidth = useBoardStore((s) => s.setLineWidth);
   const undo = useBoardStore((s) => s.undo);
   const redo = useBoardStore((s) => s.redo);
+  const copySelectedStrokes = useBoardStore((s) => s.copySelectedStrokes);
+  const pasteStrokes = useBoardStore((s) => s.pasteStrokes);
   const deleteSelectedStrokes = useBoardStore((s) => s.deleteSelectedStrokes);
   const clear = useBoardStore((s) => s.clear);
   const resetView = useBoardStore((s) => s.resetView);
@@ -86,6 +89,15 @@ export default function Toolbar() {
 
       <Divider />
 
+      <ActionButton
+        onClick={copySelectedStrokes}
+        disabled={selectedIndices.length === 0}
+      >
+        Copy
+      </ActionButton>
+      <ActionButton onClick={pasteStrokes} disabled={!canPaste}>
+        Paste
+      </ActionButton>
       <ActionButton
         onClick={deleteSelectedStrokes}
         disabled={selectedIndices.length === 0}

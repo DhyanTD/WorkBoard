@@ -258,6 +258,8 @@ export default function BoardCanvas() {
   const commitStroke = useBoardStore((s) => s.commitStroke);
   const eraseWithStroke = useBoardStore((s) => s.eraseWithStroke);
   const removeStrokeAt = useBoardStore((s) => s.removeStrokeAt);
+  const copySelectedStrokes = useBoardStore((s) => s.copySelectedStrokes);
+  const pasteStrokes = useBoardStore((s) => s.pasteStrokes);
   const deleteSelectedStrokes = useBoardStore((s) => s.deleteSelectedStrokes);
   const replaceStrokes = useBoardStore((s) => s.replaceStrokes);
   const setSelectedIndices = useBoardStore((s) => s.setSelectedIndices);
@@ -992,6 +994,20 @@ export default function BoardCanvas() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
+      const commandKey = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (commandKey && key === "c") {
+        if (selectedIndicesRef.current.length === 0) return;
+        e.preventDefault();
+        copySelectedStrokes();
+        return;
+      }
+      if (commandKey && key === "v") {
+        if (!useBoardStore.getState().canPaste) return;
+        e.preventDefault();
+        pasteStrokes();
+        return;
+      }
       if (e.key === "Escape") {
         updateSelection([]);
         return;
@@ -1005,7 +1021,12 @@ export default function BoardCanvas() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelectedStrokes, updateSelection]);
+  }, [
+    copySelectedStrokes,
+    deleteSelectedStrokes,
+    pasteStrokes,
+    updateSelection,
+  ]);
 
   const onPointerUp = useCallback(
     (e: PointerEvent<HTMLCanvasElement>) => {
