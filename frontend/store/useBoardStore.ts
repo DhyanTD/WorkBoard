@@ -1,6 +1,7 @@
 "use client";
 
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
+import { persist } from "zustand/middleware";
 import {
   MAX_ZOOM,
   MIN_ZOOM,
@@ -11,6 +12,10 @@ import {
   type Stroke,
   type Tool,
 } from "@/lib/board";
+import {
+  BOARD_STORAGE_KEY,
+  boardIndexedDbStorage,
+} from "@/storage/board/boardStorage";
 
 /**
  * Camera state. `offset` is the world-space coordinate at the top-left of the
@@ -176,7 +181,10 @@ type BoardState = {
   zoomOut: () => void;
 };
 
-export const useBoardStore = create<BoardState>()((set) => ({
+export { BOARD_STORAGE_KEY };
+const BOARD_STORAGE_VERSION = 1;
+
+const createBoardState: StateCreator<BoardState> = (set) => ({
   tool: "pencil",
   color: "#000000",
   lineWidth: 4,
@@ -478,4 +486,36 @@ export const useBoardStore = create<BoardState>()((set) => ({
     };
     useBoardStore.getState().zoomBy(1 / 1.2, anchor);
   },
-}));
+});
+
+export const useBoardStore = create<BoardState>()(
+  persist(createBoardState, {
+    name: BOARD_STORAGE_KEY,
+    version: BOARD_STORAGE_VERSION,
+    storage: boardIndexedDbStorage,
+    partialize: ({ tool, color, lineWidth, strokes }) => ({
+      tool,
+      color,
+      lineWidth,
+      strokes,
+    }),
+    // Client Components are prerendered. Hydrate after mount so the first
+    // client render matches the server render and avoids a hydration mismatch.
+    skipHydration: true,
+  }),
+);
+
+let hydrationPromise: Promise<void> | null = null;
+
+export const hydrateBoardStore = () => {
+  if (useBoardStore.persist.hasHydrated()) return Promise.resolve();
+  if (hydrationPromise) return hydrationPromise;
+
+  const currentHydration = Promise.resolve(useBoardStore.persist.rehydrate());
+  hydrationPromise = currentHydration;
+  const releaseHydration = () => {
+    if (hydrationPromise === currentHydration) hydrationPromise = null;
+  };
+  void currentHydration.then(releaseHydration, releaseHydration);
+  return currentHydration;
+};
