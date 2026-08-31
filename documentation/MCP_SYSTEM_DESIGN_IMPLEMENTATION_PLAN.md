@@ -359,26 +359,26 @@ from browser, server, tests, and MCP code.
 
 ### Steps
 
-- [ ] M1.1 Define a schema-versioned `DesignDocument` with required IDs and no
+- [x] M1.1 Define a schema-versioned `DesignDocument` with required IDs and no
   framework-specific fields.
-- [ ] M1.2 Separate the shared model from diagram views:
+- [x] M1.2 Separate the shared model from diagram views:
   - model elements;
   - relationships;
   - boundaries;
   - assumptions and decisions;
   - views containing included IDs and view-specific layout.
-- [ ] M1.3 Define the first element kinds: `person`, `software-system`, and
+- [x] M1.3 Define the first element kinds: `person`, `software-system`, and
   `container`. Model datastore and queue as container specializations and model
   an external system as a software system marked external. Reserve `component`
   without implementing it.
-- [ ] M1.4 Define the first view kinds: `system-context` and `container`.
+- [x] M1.4 Define the first view kinds: `system-context` and `container`.
   Reserve but do not implement custom, component, deployment, dynamic, and
   data-flow views.
-- [ ] M1.5 Define annotations separately from semantic elements. Add a legacy
+- [x] M1.5 Define annotations separately from semantic elements. Add a legacy
   annotation payload capable of preserving current `Stroke` data.
-- [ ] M1.6 Make IDs required in the semantic model. Add deterministic helpers
+- [x] M1.6 Make IDs required in the semantic model. Add deterministic helpers
   for test IDs and collision-safe production ID creation.
-- [ ] M1.7 Define a discriminated `DesignOperation` union:
+- [x] M1.7 Define a discriminated `DesignOperation` union:
   - add, update, and remove element;
   - add, update, and remove relationship;
   - add, update, and remove boundary;
@@ -386,12 +386,12 @@ from browser, server, tests, and MCP code.
   - set view layout;
   - add or remove annotation;
   - update design metadata.
-- [ ] M1.8 Require removals to state their expected dependencies. Do not allow
+- [x] M1.8 Require removals to state their expected dependencies. Do not allow
   silent cascading deletion of relationships, child elements, or review
   anchors.
-- [ ] M1.9 Implement a pure, atomic `applyDesignOperations` function. A failed
+- [x] M1.9 Implement a pure, atomic `applyDesignOperations` function. A failed
   operation set must return validation errors and no partial result.
-- [ ] M1.10 Implement validation for:
+- [x] M1.10 Implement validation for:
   - unique IDs;
   - valid parent and boundary references;
   - valid relationship endpoints;
@@ -399,9 +399,9 @@ from browser, server, tests, and MCP code.
   - finite geometry;
   - allowed containment hierarchy;
   - supported schema version.
-- [ ] M1.11 Implement a semantic diff that reports added, updated, moved, and
+- [x] M1.11 Implement a semantic diff that reports added, updated, moved, and
   removed IDs without depending on array order.
-- [ ] M1.12 Add serialization round-trip tests and deterministic fixture tests.
+- [x] M1.12 Add serialization round-trip tests and deterministic fixture tests.
 
 ### Suggested result contracts
 
@@ -422,20 +422,20 @@ Do not throw for expected validation failures.
 
 ### Tests
 
-- [ ] Add/update/remove each supported entity.
-- [ ] Reject duplicate and missing IDs.
-- [ ] Reject relationships with missing endpoints.
-- [ ] Reject stale dependency declarations on removal.
-- [ ] Prove atomic failure behavior.
-- [ ] Prove equivalent operation inputs produce deterministic results.
-- [ ] Prove serialization does not discard supported fields.
+- [x] Add/update/remove each supported entity.
+- [x] Reject duplicate and missing IDs.
+- [x] Reject relationships with missing endpoints.
+- [x] Reject stale dependency declarations on removal.
+- [x] Prove atomic failure behavior.
+- [x] Prove equivalent operation inputs produce deterministic results.
+- [x] Prove serialization does not discard supported fields.
 
 ### Exit criteria
 
-- [ ] The shared fixture can be created entirely through operations.
-- [ ] The fixture validates with no warnings.
-- [ ] A meaningful semantic diff is produced after an update.
-- [ ] Domain tests, lint, and type-check pass.
+- [x] The shared fixture can be created entirely through operations.
+- [x] The fixture validates with no warnings.
+- [x] A meaningful semantic diff is produced after an update.
+- [x] Domain tests, lint, and type-check pass.
 
 ---
 

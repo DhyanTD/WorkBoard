@@ -10,14 +10,14 @@ milestone status changes.
 | Field | Value |
 | --- | --- |
 | Program status | `active` |
-| Current milestone | M0 — Guardrails and architectural decisions |
+| Current milestone | M1 — Semantic design domain |
 | Milestone status | `completed` |
-| Current task | Milestone handoff — authorize M1 start |
+| Current task | Milestone handoff — authorize M2 and/or M3 start |
 | Task owner | Dhyan |
 | Started | 2026-08-31 |
 | Active blocker | None |
-| Next action | Start M1.1 when Dhyan directly requests Milestone 1 implementation |
-| Next gate | Move M1 from `ready` to `in-progress` and define the schema-versioned `DesignDocument` |
+| Next action | Start M2 and/or M3 when Dhyan directly requests the next milestone implementation |
+| Next gate | Move the selected ready milestone to `in-progress` and record its implementation boundary |
 | Related commits / pull requests | None yet |
 
 Only one milestone may be `in-progress`. Valid statuses are `not-started`,
@@ -28,9 +28,9 @@ Only one milestone may be `in-progress`. Valid statuses are `not-started`,
 | Milestone | Status | Evidence / next gate |
 | --- | --- | --- |
 | M0 — Guardrails and decisions | `completed` | All tasks and exit criteria passed on 2026-08-31 |
-| M1 — Semantic design domain | `ready` | M0 is complete; awaiting explicit start authorization |
-| M2 — Semantic canvas adapter | `not-started` | Requires M1 |
-| M3 — Application service and web API | `not-started` | Requires M1 |
+| M1 — Semantic design domain | `completed` | All M1 tasks and exit criteria passed on 2026-08-31 |
+| M2 — Semantic canvas adapter | `ready` | M1 is complete; awaiting explicit start authorization |
+| M3 — Application service and web API | `ready` | M1 is complete; may run in parallel with M2 after explicit authorization |
 | M4 — Shared persistence and authorization | `not-started` | Requires M3 |
 | M5 — Revisions and change proposals | `not-started` | Requires M4 |
 | M6 — Human review workflow | `not-started` | Requires M2 and M5 |
@@ -53,6 +53,31 @@ Only one milestone may be `in-progress`. Valid statuses are `not-started`,
 | M0.6 Record verification commands | `completed` | Implementation agent | [Verification contract](./MCP_SYSTEM_DESIGN_VERIFICATION.md) separates current commands from required stable scripts |
 | M0.7 Capture IndexedDB behavior as a regression baseline | `completed` | Implementation agent | Version-1 fixture and 9-test characterization suite pass through `pnpm test:storage` |
 | M0.8 Create the progress tracker | `completed` | Implementation agent | This file created on 2026-08-31 |
+
+## Completed milestone: M1
+
+### Tasks
+
+| Task | Status | Owner | Evidence / next action |
+| --- | --- | --- | --- |
+| M1.1–M1.8 Define document, model/view boundary, initial vocabulary, annotations, identifiers, operations, and guarded removals | `completed` | Implementation agent | Pure contracts added under `frontend/domain/design/` |
+| M1.9 Apply operation batches atomically | `completed` | Implementation agent | Invalid batches return stable errors and no partial document |
+| M1.10 Validate document invariants | `completed` | Implementation agent | IDs, references, containment, views, geometry, and annotations validated |
+| M1.11 Produce order-independent semantic diffs | `completed` | Implementation agent | Semantic, layout, and annotation changes are classified by stable ID |
+| M1.12 Add serialization and fixture tests | `completed` | Implementation agent | Domain suite includes JSON round-trip, fixture, operation, validation, diff, and identifier coverage |
+
+### Exit criteria
+
+- [x] The shared fixture can be created entirely through operations.
+- [x] The fixture validates with no warnings.
+- [x] A meaningful semantic diff is produced after an update.
+- [x] Domain tests, lint, and type-check pass.
+
+### Migration handoffs
+
+None in Milestone 1. The domain document deliberately has no persistence
+entity or migration. Dhyan remains the sole owner of migrations when shared
+persistence begins in Milestone 4.
 
 ### Decision gates
 
@@ -100,7 +125,13 @@ registering, renaming, or deleting migrations in later milestones.
 | 2026-08-31 | `pnpm lint` | Passed |
 | 2026-08-31 | `pnpm exec tsc --noEmit` | Passed |
 | 2026-08-31 | `pnpm build` | Passed: Next.js 16.2.10 production build |
-| 2026-08-31 | Product code and database migrations changed | No |
+| 2026-08-31 | `pnpm test:domain` | Passed: Vitest 4.1.11, 1 file and 8 tests |
+| 2026-08-31 | `pnpm test:storage` | Passed: legacy version-1 regression baseline remains green after M1 |
+| 2026-08-31 | `pnpm typecheck` | Passed after adding the M1 stable command alias and pure domain package |
+| 2026-08-31 | M1 production build | Passed: Next.js 16.2.10 compiled the domain package in the production build |
+| 2026-08-31 | M1 product code changed | Yes: pure framework-independent domain package and tests; no UI, API, persistence, or migration behavior changed |
+| 2026-08-31 | M1 database migrations changed | No |
+| 2026-08-31 | M0 product code and database migrations changed | No |
 
 ## Activity log
 
@@ -120,6 +151,8 @@ registering, renaming, or deleting migrations in later milestones.
 | 2026-08-31 | Verification contract completed | M0.6 completed and M0.7 became the current task |
 | 2026-08-31 | IndexedDB baseline completed | M0.7 completed with a version-1 fixture and 9 passing characterization tests |
 | 2026-08-31 | Milestone 0 completed | Every task and exit criterion passed; M1 moved to `ready` without starting implementation |
+| 2026-08-31 | Milestone 1 started | Dhyan authorized implementation; M1.1–M1.8 became the active task |
+| 2026-08-31 | Milestone 1 completed | Typed domain package, fixture, tests, documentation, lint, type-check, and build passed; M2 and M3 moved to `ready` |
 
 ## Update protocol
 

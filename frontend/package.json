@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:storage": "vitest run storage/board"
+    "typecheck": "tsc --noEmit",
+    "test:storage": "vitest run storage/board",
+    "test:domain": "vitest run domain/design"
   },
   "dependencies": {
     "dexie": "4.4.5",

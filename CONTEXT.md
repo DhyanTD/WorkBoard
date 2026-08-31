@@ -30,6 +30,9 @@ views without changing the meaning of the underlying architecture.
 | System-context view | A C4-style view centered on one software system, the people who use it, and the external software systems it interacts with. |
 | Container view | A C4-style view of the containers inside one software system and their interactions with people and external systems. |
 | Annotation | Freehand, text, or other visual markup that does not change the semantic architecture model. |
+| Design operation | A typed, explicit requested change to a Design document. Operations are applied as one atomic batch or not at all. |
+| Dependency declaration | The complete list of current direct references an author expects before removing a semantic record. It prevents a removal from silently deleting relationships, view references, or boundary membership. |
+| Semantic diff | An order-independent comparison of two Design documents that separates architecture changes from view-layout movement and annotation changes. |
 
 ## Confirmed abstraction rules
 

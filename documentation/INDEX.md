@@ -11,6 +11,8 @@
   supported, compatibility, test-only, and deferred client surfaces.
 - [Shared system-design fixture](./MCP_SYSTEM_DESIGN_FIXTURE.md) — stable model,
   views, layout, and change scenarios reused across milestones.
+- [Design document model](./DESIGN_DOCUMENT_MODEL.md) — version-1 semantic
+  schema, operation API, validation, diff, fixture, and compatibility rules.
 - [MCP system-design verification contract](./MCP_SYSTEM_DESIGN_VERIFICATION.md)
   — stable command names, test-layer boundaries, milestone gates, and evidence
   requirements.

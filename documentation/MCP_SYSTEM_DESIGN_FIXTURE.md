@@ -6,9 +6,10 @@ Fixture key: `commerce-platform-review-v1`
 
 Every milestone uses this same small design to test domain rules, rendering,
 API and MCP contracts, revisions, proposals, review notes, authorization, and
-exports. IDs and expected meanings are stable. Milestone 1 may serialize this
-specification into typed fixtures, but it must not silently rename IDs or change
-the expected topology.
+exports. IDs and expected meanings are stable. Milestone 1 encodes this
+specification as typed fixtures and operation batches in
+`frontend/domain/design/fixtures.ts`; later milestones must not silently rename
+IDs or change the expected topology.
 
 The fixture describes an online commerce platform used by a customer and
 connected to an external payment provider. The platform contains a web app, an

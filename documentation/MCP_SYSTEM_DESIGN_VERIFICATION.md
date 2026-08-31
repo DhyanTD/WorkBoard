@@ -18,14 +18,15 @@ repository.
 | Command | Purpose | Current status |
 | --- | --- | --- |
 | `pnpm lint` | ESLint checks | Available |
-| `pnpm exec tsc --noEmit` | Strict TypeScript check | Available; becomes `pnpm typecheck` when M1 adds the stable alias |
+| `pnpm typecheck` | Strict TypeScript check | Available; stable alias introduced in M1 |
 | `pnpm build` | Next.js production build | Available |
 | `pnpm test:storage` | Version-1 Dexie/IndexedDB and persisted-store regression contract | Available; 9 characterization tests established in M0.7 |
+| `pnpm test:domain` | Design document, operations, validation, fixture, diff, and serialization contract | Available; M1 domain suite |
 
-The repository now contains Vitest for the storage baseline. It does not yet
-contain a component-test environment, browser-test environment, API integration
-harness, or MCP contract-test harness. Do not report the remaining future
-commands below as passing until their scripts and suites exist.
+The repository now contains Vitest for domain and storage baselines. It does
+not yet contain a component-test environment, browser-test environment, API
+integration harness, or MCP contract-test harness. Do not report the remaining
+future commands below as passing until their scripts and suites exist.
 
 ## Required stable command names
 
