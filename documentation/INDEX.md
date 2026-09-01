@@ -13,11 +13,18 @@
   views, layout, and change scenarios reused across milestones.
 - [Design document model](./DESIGN_DOCUMENT_MODEL.md) — version-1 semantic
   schema, operation API, validation, diff, fixture, and compatibility rules.
+- [Semantic canvas implementation](./SEMANTIC_CANVAS_IMPLEMENTATION.md) —
+  operation-driven rendering, stable-ID selection, annotations, workbench
+  usage, and legacy Board conversion behavior.
+- [Design application service and HTTP API](./DESIGN_APPLICATION_API.md) —
+  provider-neutral use cases, authorization boundary, typed Route Handlers,
+  client adapter, errors, and transitional runtime caveats.
 - [MCP system-design verification contract](./MCP_SYSTEM_DESIGN_VERIFICATION.md)
   — stable command names, test-layer boundaries, milestone gates, and evidence
   requirements.
 - [Persistent board storage](./PERSISTENT_BOARD_STORAGE.md) — current
-  browser-local Dexie/IndexedDB persistence behavior and caveats.
+  browser-local Dexie/IndexedDB persistence, semantic import retention, and
+  local UI-state caveats.
 - [ADR 0001: Modular monolith deployment](../docs/adr/0001-modular-monolith-deployment.md)
   — accepted initial deployment shape and conditions for later MCP service
   extraction.

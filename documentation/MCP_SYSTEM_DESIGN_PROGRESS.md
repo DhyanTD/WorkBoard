@@ -10,18 +10,19 @@ milestone status changes.
 | Field | Value |
 | --- | --- |
 | Program status | `active` |
-| Current milestone | M1 — Semantic design domain |
-| Milestone status | `completed` |
-| Current task | Milestone handoff — authorize M2 and/or M3 start |
-| Task owner | Dhyan |
+| Current milestone | M4 — Shared persistence and authorization |
+| Milestone status | `ready` |
+| Current task | Await authorization to start M4.1 and its Dhyan-owned migration handoff |
+| Task owner | Dhyan + implementation agent |
 | Started | 2026-08-31 |
 | Active blocker | None |
-| Next action | Start M2 and/or M3 when Dhyan directly requests the next milestone implementation |
-| Next gate | Move the selected ready milestone to `in-progress` and record its implementation boundary |
+| Next action | Review and authorize the M4 persistence/authentication scope before entities change |
+| Next gate | PostgreSQL/TypeORM entities and WorkOS actor adaptation are authorized; Dhyan generates required migrations |
 | Related commits / pull requests | None yet |
 
-Only one milestone may be `in-progress`. Valid statuses are `not-started`,
-`ready`, `in-progress`, `blocked`, and `completed`.
+Only one milestone or explicitly authorized parallel group may be
+`in-progress`. Valid statuses are `not-started`, `ready`, `in-progress`,
+`blocked`, and `completed`.
 
 ## Milestone overview
 
@@ -29,9 +30,9 @@ Only one milestone may be `in-progress`. Valid statuses are `not-started`,
 | --- | --- | --- |
 | M0 — Guardrails and decisions | `completed` | All tasks and exit criteria passed on 2026-08-31 |
 | M1 — Semantic design domain | `completed` | All M1 tasks and exit criteria passed on 2026-08-31 |
-| M2 — Semantic canvas adapter | `ready` | M1 is complete; awaiting explicit start authorization |
-| M3 — Application service and web API | `ready` | M1 is complete; may run in parallel with M2 after explicit authorization |
-| M4 — Shared persistence and authorization | `not-started` | Requires M3 |
+| M2 — Semantic canvas adapter | `completed` | All tasks, UX scenarios, regression suites, and three-engine journeys passed on 2026-08-31 |
+| M3 — Application service and web API | `completed` | Service, authorization, repository, typed routes/client, and equivalence contracts passed on 2026-08-31 |
+| M4 — Shared persistence and authorization | `ready` | M3 dependency is complete; implementation requires a new direct request and migration handoff |
 | M5 — Revisions and change proposals | `not-started` | Requires M4 |
 | M6 — Human review workflow | `not-started` | Requires M2 and M5 |
 | M7 — MCP read and validation tools | `not-started` | Requires M5 |
@@ -78,6 +79,41 @@ Only one milestone may be `in-progress`. Valid statuses are `not-started`,
 None in Milestone 1. The domain document deliberately has no persistence
 entity or migration. Dhyan remains the sole owner of migrations when shared
 persistence begins in Milestone 4.
+
+## Completed parallel milestones: M2 + M3
+
+The implementation plan permits M2 and M3 to run in parallel after M1. Dhyan
+authorized both together on 2026-08-31; both workstreams completed that day.
+
+### Tasks
+
+| Workstream | Status | Owner | Evidence / next action |
+| --- | --- | --- | --- |
+| M2.1–M2.7 Semantic adapter, theme mapping, ID selection, connectors, layouts, placement, and operation-driven editing | `completed` | Implementation agent | Implemented under `frontend/semantic/`, `frontend/store/`, and `frontend/components/design/` |
+| M2.8–M2.12 UI-only state, annotations, legacy conversion, retention, and developer workbench | `completed` | Implementation agent | Workbench route, developer panel, and retry-safe import implemented |
+| M3.1 Route/runtime documentation | `completed` | Implementation agent | Next.js 16 Route Handler, dynamic params, Vitest, and Playwright guides reviewed |
+| M3.2–M3.6 Actor context, repositories, service use cases, and errors | `completed` | Implementation agent | Provider-neutral service and in-memory repository implemented |
+| M3.7–M3.10 Typed routes, correlation/revision IDs, API client, and contract tests | `completed` | Implementation agent | Strict Zod routes, typed client, response metadata, and equivalence contracts implemented |
+
+### Exit criteria
+
+- [x] Existing Board behavior has regression coverage.
+- [x] Semantic elements are editable without direct `Stroke[]` manipulation.
+- [x] Shared fixture renders consistently in both supported views.
+- [x] Shared fixture can be created, read, and validated through the API.
+- [x] Authorization checks exist at the application-service boundary.
+- [x] UI/API integration and direct-service/HTTP equivalence tests pass.
+
+### Implementation summaries
+
+- [Semantic canvas implementation](./SEMANTIC_CANVAS_IMPLEMENTATION.md)
+- [Design application service and HTTP API](./DESIGN_APPLICATION_API.md)
+
+### Migration handoffs
+
+None in Milestones 2 or 3. The runtime is deliberately in-memory; no database
+entities or migrations were created or changed. Milestone 4 is now `ready`,
+but Dhyan must generate every migration after its entity design is authorized.
 
 ### Decision gates
 
@@ -131,6 +167,13 @@ registering, renaming, or deleting migrations in later milestones.
 | 2026-08-31 | M1 production build | Passed: Next.js 16.2.10 compiled the domain package in the production build |
 | 2026-08-31 | M1 product code changed | Yes: pure framework-independent domain package and tests; no UI, API, persistence, or migration behavior changed |
 | 2026-08-31 | M1 database migrations changed | No |
+| 2026-08-31 | `pnpm test:components` | Passed: Vitest 4.1.11, 8 files and 15 tests |
+| 2026-08-31 | `pnpm test:api` | Passed: Vitest 4.1.11, 2 files and 6 tests |
+| 2026-08-31 | M2/M3 production build | Passed: Next.js 16.2.10, workbench plus five dynamic Design API routes |
+| 2026-08-31 | Playwright Chromium and Firefox | Passed: 2 production journeys per engine, including real IndexedDB retention |
+| 2026-08-31 | Playwright WebKit | Passed: 2 production journeys using Playwright 1.62.1 fallback WebKit on Fedora with user-local ICU/JPEG compatibility libraries |
+| 2026-08-31 | `pnpm verify` | Passed: lint, type-check, 38 Vitest tests, production build, and 6 Playwright runs across Chromium, Firefox, and WebKit |
+| 2026-08-31 | M2/M3 database migrations changed | No |
 | 2026-08-31 | M0 product code and database migrations changed | No |
 
 ## Activity log
@@ -153,12 +196,15 @@ registering, renaming, or deleting migrations in later milestones.
 | 2026-08-31 | Milestone 0 completed | Every task and exit criterion passed; M1 moved to `ready` without starting implementation |
 | 2026-08-31 | Milestone 1 started | Dhyan authorized implementation; M1.1–M1.8 became the active task |
 | 2026-08-31 | Milestone 1 completed | Typed domain package, fixture, tests, documentation, lint, type-check, and build passed; M2 and M3 moved to `ready` |
+| 2026-08-31 | Milestones 2 and 3 started | Dhyan authorized the roadmap's parallel semantic UI and application/API workstreams |
+| 2026-08-31 | Milestones 2 and 3 completed | Semantic workbench, retained legacy import, provider-neutral service, typed API/client, documentation, and all exit criteria passed; M4 moved to `ready` |
 
 ## Update protocol
 
 1. Read this file before doing program work.
-2. Keep exactly one current milestone. While implementation is active, keep
-   exactly one current task and one `in-progress` milestone.
+2. Keep exactly one current milestone or plan-authorized parallel milestone
+   group. Only use parallel `in-progress` statuses when the roadmap permits it
+   and Dhyan explicitly authorizes the grouped milestones.
 3. Record accepted decisions here immediately; add an ADR when the decision is
    durable, surprising, and costly to reverse.
 4. Attach commands and results to verification evidence rather than marking a

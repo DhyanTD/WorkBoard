@@ -200,6 +200,21 @@ const validateElement = (
       ),
     );
   }
+  for (const [responsibilityIndex, responsibility] of (
+    element.responsibilities ?? []
+  ).entries()) {
+    if (!isNonBlank(responsibility)) {
+      errors.push(
+        createIssue(
+          "invalid-document",
+          `${path}.responsibilities[${responsibilityIndex}]`,
+          "An Element responsibility cannot be empty.",
+          "Remove the value or provide a concise responsibility.",
+          element.id,
+        ),
+      );
+    }
+  }
   if (element.kind !== "container") return;
 
   const parent = findElement(document, element.parentId);

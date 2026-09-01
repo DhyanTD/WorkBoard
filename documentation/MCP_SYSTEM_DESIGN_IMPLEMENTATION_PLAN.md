@@ -447,39 +447,39 @@ behavior.
 
 ### Steps
 
-- [ ] M2.1 Introduce a view-model adapter that maps semantic elements and
+- [x] M2.1 Introduce a view-model adapter that maps semantic elements and
   relationships to renderable canvas primitives.
-- [ ] M2.2 Keep element semantics separate from shape choice. Map element kinds
+- [x] M2.2 Keep element semantics separate from shape choice. Map element kinds
   to default visual styles through a theme/presentation layer.
-- [ ] M2.3 Replace semantic selection by array index with stable ID selection.
+- [x] M2.3 Replace semantic selection by array index with stable ID selection.
   Annotation selection may remain separate internally.
-- [ ] M2.4 Update connector behavior to bind relationships to element IDs and
+- [x] M2.4 Update connector behavior to bind relationships to element IDs and
   derive visible endpoints from view layout.
-- [ ] M2.5 Move element positions and sizes into the active view's layout.
-- [ ] M2.6 Add deterministic placement for elements without layout. Do not
+- [x] M2.5 Move element positions and sizes into the active view's layout.
+- [x] M2.6 Add deterministic placement for elements without layout. Do not
   require an agent to provide pixel-perfect coordinates.
-- [ ] M2.7 Translate UI actions into `DesignOperation` values and apply them
+- [x] M2.7 Translate UI actions into `DesignOperation` values and apply them
   through the domain engine.
-- [ ] M2.8 Keep camera offset, scale, in-progress pointer state, selection,
+- [x] M2.8 Keep camera offset, scale, in-progress pointer state, selection,
   clipboard, and undo/redo presentation state outside the persisted semantic
   document.
-- [ ] M2.9 Preserve pencil/eraser/text markup as annotations. Clearly distinguish
+- [x] M2.9 Preserve pencil/eraser/text markup as annotations. Clearly distinguish
   semantic text labels from freeform annotation text.
-- [ ] M2.10 Build a one-time legacy conversion function from persisted version-1
+- [x] M2.10 Build a one-time legacy conversion function from persisted version-1
   `Stroke[]` data to a design containing an annotation layer.
-- [ ] M2.11 Do not delete the legacy IndexedDB record after conversion until a
+- [x] M2.11 Do not delete the legacy IndexedDB record after conversion until a
   verified server-backed save exists in Milestone 4.
-- [ ] M2.12 Add a developer-only panel or fixture route that displays the active
+- [x] M2.12 Add a developer-only panel or fixture route that displays the active
   semantic document and validation errors during this transition.
 
 ### UX acceptance scenarios
 
-- [ ] Create, move, resize, copy, paste, and delete a semantic element.
-- [ ] Create a relationship and keep it attached while either endpoint moves.
-- [ ] Edit element name, description, technology, and responsibilities.
-- [ ] Switch between system-context and container views of the same model.
-- [ ] Draw annotations without adding them to the semantic model.
-- [ ] Reload a converted legacy board without losing visible content.
+- [x] Create, move, resize, copy, paste, and delete a semantic element.
+- [x] Create a relationship and keep it attached while either endpoint moves.
+- [x] Edit element name, description, technology, and responsibilities.
+- [x] Switch between system-context and container views of the same model.
+- [x] Draw annotations without adding them to the semantic model.
+- [x] Reload a converted legacy board without losing visible content.
 
 ### Documentation
 
@@ -489,10 +489,10 @@ behavior.
 
 ### Exit criteria
 
-- [ ] Existing drawing, pan, zoom, theme, selection, copy/paste, and undo/redo
+- [x] Existing drawing, pan, zoom, theme, selection, copy/paste, and undo/redo
   behavior has regression coverage.
-- [ ] Semantic elements are editable without direct `Stroke[]` manipulation.
-- [ ] The shared fixture renders consistently in both supported views.
+- [x] Semantic elements are editable without direct `Stroke[]` manipulation.
+- [x] The shared fixture renders consistently in both supported views.
 
 ---
 
@@ -516,30 +516,30 @@ frontend/server/design/
 
 ### Steps
 
-- [ ] M3.1 Resolve D1 and read the relevant Next.js 16 Route Handler and runtime
+- [x] M3.1 Resolve D1 and read the relevant Next.js 16 Route Handler and runtime
   documentation from `frontend/node_modules/next/dist/docs/` before writing
   routes.
-- [ ] M3.2 Define a concrete `ActorContext` containing actor ID, workspace ID,
+- [x] M3.2 Define a concrete `ActorContext` containing actor ID, workspace ID,
   roles/scopes, and request correlation ID.
-- [ ] M3.3 Define repository interfaces using domain types rather than database
+- [x] M3.3 Define repository interfaces using domain types rather than database
   records.
-- [ ] M3.4 Implement an in-memory repository for deterministic service and API
+- [x] M3.4 Implement an in-memory repository for deterministic service and API
   tests.
-- [ ] M3.5 Implement initial application-service use cases:
+- [x] M3.5 Implement initial application-service use cases:
   - list designs;
   - create design;
   - get design head;
   - get a specific revision-shaped snapshot;
   - validate operations without saving;
   - save an initial draft during the transition.
-- [ ] M3.6 Define stable application error codes for not found, forbidden,
+- [x] M3.6 Define stable application error codes for not found, forbidden,
   conflict, invalid operation, unsupported schema version, and internal failure.
-- [ ] M3.7 Add typed HTTP endpoints for the web application. Validate all input
+- [x] M3.7 Add typed HTTP endpoints for the web application. Validate all input
   at the server boundary even when it came from the trusted UI.
-- [ ] M3.8 Return correlation IDs and current revision identifiers in responses.
-- [ ] M3.9 Add an API client adapter for the Zustand/UI layer. UI components must
+- [x] M3.8 Return correlation IDs and current revision identifiers in responses.
+- [x] M3.9 Add an API client adapter for the Zustand/UI layer. UI components must
   not call database or MCP code.
-- [ ] M3.10 Add contract tests proving that HTTP and direct service calls return
+- [x] M3.10 Add contract tests proving that HTTP and direct service calls return
   equivalent results.
 
 ### Documentation
@@ -550,10 +550,10 @@ frontend/server/design/
 
 ### Exit criteria
 
-- [ ] The shared fixture can be created, read, and validated through the API.
-- [ ] Authorization checks exist at the application-service boundary.
-- [ ] The UI can use the in-memory-backed API in an integration test.
-- [ ] No MCP-specific types appear in the domain or application service.
+- [x] The shared fixture can be created, read, and validated through the API.
+- [x] Authorization checks exist at the application-service boundary.
+- [x] The UI can use the in-memory-backed API in an integration test.
+- [x] No MCP-specific types appear in the domain or application service.
 
 ---
 

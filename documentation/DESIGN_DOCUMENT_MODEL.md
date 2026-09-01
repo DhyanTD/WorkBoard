@@ -30,6 +30,9 @@ DesignDocument
 decision statements. All document records—elements, relationships, boundaries,
 views, and annotations—use globally unique, non-empty IDs.
 
+Every Element may carry `responsibilities[]`: concise semantic duties that are
+editable independently from the Element's visual presentation.
+
 The document has no database fields such as workspace IDs, revision IDs,
 timestamps, author identities, permissions, or persistence metadata. Those
 belong to the application and persistence layers introduced in later

@@ -18,6 +18,7 @@ views without changing the meaning of the underlying architecture.
 | Term | Meaning |
 | --- | --- |
 | Element | A stable semantic node in a system design. The initial kinds are person, software system, and container. |
+| Responsibility | A concise semantic duty owned by an Element. Responsibilities describe what the Element does and are independent of its visual shape or position. |
 | Person | A human role or persona that uses or interacts with a software system. It is not an application user account. |
 | Software system | The highest-level software boundary modeled in the initial vocabulary. It may be owned by the design's organization or marked external. |
 | External software system | A software system outside the modeled ownership or change boundary. “External system” is a classification, not a separate element kind. |

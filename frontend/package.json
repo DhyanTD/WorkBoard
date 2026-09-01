@@ -9,23 +9,34 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:storage": "vitest run storage/board",
-    "test:domain": "vitest run domain/design"
+    "test:domain": "vitest run domain/design",
+    "test:components": "vitest run components store semantic",
+    "test:api": "vitest run server app/api client",
+    "test:e2e": "pnpm build && playwright test",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test:storage && pnpm test:domain && pnpm test:components && pnpm test:api && pnpm test:e2e"
   },
   "dependencies": {
     "dexie": "4.4.5",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "zod": "4.5.4",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "6.1.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "fake-indexeddb": "6.2.5",
+    "jsdom": "29.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "4.1.11"

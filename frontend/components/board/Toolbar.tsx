@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { COLORS, isDrawingTool, type Tool } from "@/lib/board";
 import { useBoardStore } from "@/store/useBoardStore";
 import ToolButton from "@/components/board/ToolButton";
@@ -118,6 +119,12 @@ export default function Toolbar() {
 
       <div className="ml-auto flex items-center gap-3">
         <Divider />
+        <Link
+          href="/designs/workbench"
+          className="rounded-md border border-[#173f5f] bg-[#173f5f] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#245775]"
+        >
+          Design atelier
+        </Link>
         <ThemeToggle />
       </div>
     </div>

@@ -7,7 +7,37 @@ body {
   height: 100%;
 }
 
+.semantic-canvas {
+  background-color: #fbf8f0;
+  background-image:
+    linear-gradient(rgba(42, 48, 47, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42, 48, 47, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(42, 48, 47, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42, 48, 47, 0.08) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+}
+
+.inspector-input {
+  width: 100%;
+  border: 1px solid #bdb9ae;
+  background: #fffdf8;
+  padding: 0.65rem 0.7rem;
+  color: #292a26;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.inspector-input:focus {
+  border-color: #173f5f;
+  box-shadow: 3px 3px 0 rgba(23, 63, 95, 0.14);
+}
+
 :root {
+  --font-geist-sans: "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-geist-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --background: #f5f4f1;
   --foreground: #202124;
   --toolbar-background: rgba(250, 249, 247, 0.94);

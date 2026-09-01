@@ -62,6 +62,7 @@ type ElementBase = {
   id: string;
   name: string;
   description?: string;
+  responsibilities?: string[];
 };
 
 export type PersonElement = ElementBase & {

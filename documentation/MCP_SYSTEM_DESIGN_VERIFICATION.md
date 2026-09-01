@@ -22,11 +22,15 @@ repository.
 | `pnpm build` | Next.js production build | Available |
 | `pnpm test:storage` | Version-1 Dexie/IndexedDB and persisted-store regression contract | Available; 9 characterization tests established in M0.7 |
 | `pnpm test:domain` | Design document, operations, validation, fixture, diff, and serialization contract | Available; M1 domain suite |
+| `pnpm test:components` | Semantic adapters/store, React workbench, annotations, and legacy Board behavior | Available; M2 suite, 8 files / 15 tests |
+| `pnpm test:api` | Application service, authorization, HTTP contracts, and typed client integration | Available; M3 suite, 2 files / 6 tests |
+| `pnpm test:e2e` | Production browser journeys in Chromium, Firefox, and WebKit | Available; M2 suite, 2 journeys per engine |
+| `pnpm verify` | Lint, type-check, implemented suites, production build, and browser matrix | Available; introduced in M2 |
 
-The repository now contains Vitest for domain and storage baselines. It does
-not yet contain a component-test environment, browser-test environment, API
-integration harness, or MCP contract-test harness. Do not report the remaining
-future commands below as passing until their scripts and suites exist.
+The repository now contains Vitest environments for domain, storage,
+component, and API coverage plus Playwright production-build journeys. The MCP
+contract-test harness remains future work; do not report `test:mcp` as passing
+until Milestone 7 introduces it.
 
 ## Required stable command names
 
@@ -102,3 +106,8 @@ not yet present, but must not present that absence as a passing test result.
   milestone requires them.
 - Database migrations remain Dhyan's responsibility and are never generated or
   changed by implementation agents.
+- Playwright downloads a fallback Ubuntu WebKit build on Fedora. The local
+  engine needs compatible ICU 74 and JPEG 8 libraries and skips Playwright's
+  Ubuntu package-name preflight; actual browser launch remains required. CI
+  should use Playwright's supported Linux image or install its documented host
+  dependencies.

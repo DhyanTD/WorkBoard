@@ -12,6 +12,8 @@ frontend/!.yarn/versions
 
 # testing
 frontend//coverage
+frontend/test-results/
+frontend/playwright-report/
 
 # next.js
 frontend/.next/

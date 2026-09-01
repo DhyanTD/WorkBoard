@@ -66,6 +66,24 @@ Undo and redo history, selections, clipboard contents, paste count, and camera
 position/zoom are session-only. Reloading starts those controls in their default
 state while retaining the committed board content.
 
+## Semantic Design conversion
+
+Milestone 2 adds an explicit import action in `/designs/workbench`. It reads the
+same version-1 `open-workboard-board` record and converts every committed
+Stroke into a lossless `legacy-stroke` annotation attached to a new semantic
+Design. The converter does not infer people, systems, containers,
+relationships, or responsibilities from drawing geometry.
+
+The original IndexedDB record is retained after conversion, including after a
+successful transitional in-memory API save. This makes conversion retry-safe
+while the API is not durable. Milestone 4 must establish a verified
+server-backed save and recovery policy before code may delete that record.
+
+Semantic camera position, zoom, selected IDs, clipboard, connection source,
+pointer gestures, and undo/redo stacks are also local UI state and are not part
+of the accepted Design document. Element and boundary rectangles are different:
+they are persisted presentation data inside the active View layout.
+
 ## Operational caveats
 
 Persistence is local to the current browser profile and origin; it does not sync
@@ -74,4 +92,6 @@ full, the in-memory board continues to work but recent changes may not be
 available after a reload. The Dexie database schema and persisted Zustand state
 schema are both version `1`; future breaking changes require coordinated schema
 handling before either version is increased. Keep `pnpm test:storage` passing
-while adding conversion or shared-persistence behavior.
+while adding conversion or shared-persistence behavior. The semantic converter
+and real-browser retention journey are covered by `pnpm test:components` and
+`pnpm test:e2e`, respectively.
