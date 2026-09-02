@@ -48,6 +48,7 @@ const snapshotSchema = z
 const headSchema = z
   .object({
     designId: z.string(),
+    workspaceId: z.string(),
     currentRevisionId: z.string(),
     snapshot: snapshotSchema,
   })
@@ -78,9 +79,11 @@ const failureSchema = z
     error: z
       .object({
         code: z.enum([
+          "unauthenticated",
           "not-found",
           "forbidden",
           "conflict",
+          "idempotency-conflict",
           "invalid-operation",
           "unsupported-schema-version",
           "internal-failure",
@@ -119,6 +122,7 @@ const internalClientFailure = <T>(correlationId: string): ApplicationResult<T> =
 });
 
 const developmentHeaders = {
+  "x-open-workboard-development-auth": "true",
   "x-actor-id": "actor-local-designer",
   "x-workspace-id": "workspace-acme",
   "x-actor-roles": "owner",
@@ -151,9 +155,10 @@ export class DesignApiClient {
     );
   }
 
-  createDesign(document: DesignDocument) {
+  createDesign(document: DesignDocument, idempotencyKey?: string) {
     return this.request<DesignHead>("/api/designs", headSchema, {
       method: "POST",
+      headers: idempotencyKey ? { "idempotency-key": idempotencyKey } : {},
       body: JSON.stringify({ document }),
     });
   }
@@ -173,12 +178,14 @@ export class DesignApiClient {
     designId: string,
     document: DesignDocument,
     expectedRevisionId: string,
+    idempotencyKey?: string,
   ) {
     return this.request<DesignHead>(
       `/api/designs/${encodeURIComponent(designId)}/draft`,
       headSchema,
       {
         method: "PUT",
+        headers: idempotencyKey ? { "idempotency-key": idempotencyKey } : {},
         body: JSON.stringify({ document, expectedRevisionId }),
       },
     );

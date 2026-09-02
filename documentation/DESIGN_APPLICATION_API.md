@@ -1,6 +1,6 @@
 # Design application service and HTTP API
 
-Last updated: 2026-08-31
+Last updated: 2026-09-02
 
 ## Purpose
 
@@ -9,29 +9,34 @@ future MCP adapters. `frontend/server/design/DesignService.ts` contains the use
 cases and authorization checks. It depends on a `DesignRepository` interface,
 not React, Zustand, Next.js, TypeORM, WorkOS, or MCP types.
 
-The current runtime uses `InMemoryDesignRepository`. It is deterministic and
-suitable for development and contract tests, but is not durable storage.
+The configured runtime uses `TypeOrmDesignRepository` when `DATABASE_URL` is
+present. Development and tests can explicitly use `InMemoryDesignRepository`.
+Production fails closed instead of silently selecting ephemeral storage.
 
 ## Actor context and authorization
 
 Every service call receives an `ActorContext` with an actor ID, Workspace ID,
-roles, scopes, and correlation ID. Read use cases require `design:read`; create
-and draft-save require `design:write`. Repository records are also checked
-against the actor's Workspace at the application boundary.
+application role, bounded scopes, correlation ID, and authentication method.
+Read use cases require `design:read`; create and draft-save require
+`design:write`. Every repository query is scoped by Workspace.
 
-Route Handlers currently adapt these development headers:
+Browser routes use verified WorkOS AuthKit sessions. WorkOS user and
+organization IDs are mapped through application-owned identity, Workspace, and
+membership tables. Provider permissions can narrow but never expand the
+membership role. The explicit local/test adapter accepts:
 
 | Header | Example |
 | --- | --- |
+| `x-open-workboard-development-auth` | `true` |
 | `x-actor-id` | `actor-local-designer` |
 | `x-workspace-id` | `workspace-acme` |
 | `x-actor-roles` | `owner` |
 | `x-actor-scopes` | `design:read,design:write` |
 | `x-correlation-id` | caller-provided request identifier |
 
-Missing headers receive local-development defaults. This is not production
-authentication. Milestone 4 must replace the header adapter with verified
-WorkOS session/token identity while retaining the same application context.
+The application membership remains authoritative; `x-actor-roles` is ignored.
+This adapter is unavailable in production unless `OPEN_WORKBOARD_DEV_AUTH=true`
+is deliberately configured.
 
 ## Use cases and HTTP routes
 
@@ -51,6 +56,12 @@ stable error object, correlation ID, and optionally the current revision.
 Responses also expose `x-correlation-id` and, when known,
 `x-current-revision-id` headers.
 
+`POST /api/designs` and `PUT /api/designs/{designId}/draft` accept an optional
+`Idempotency-Key` header. Keys use up to 200 URL-safe characters. Equivalent
+retries return the original revision; reuse for different intent returns 409.
+Successful Design-head data now includes `workspaceId` so browser caches cannot
+mix the same Design ID across organizations.
+
 The browser calls these routes only through `frontend/client/designApi.ts`.
 That client validates response envelopes before returning them to Zustand.
 
@@ -58,9 +69,11 @@ That client validates response envelopes before returning them to Zustand.
 
 | Code | HTTP status | Meaning |
 | --- | --- | --- |
+| `unauthenticated` | 401 | No verified WorkOS session |
 | `not-found` | 404 | Design or snapshot does not exist |
 | `forbidden` | 403 | Actor lacks the required permission or Workspace access |
 | `conflict` | 409 | Duplicate ID, route/document mismatch, or stale expected revision |
+| `idempotency-conflict` | 409 | Idempotency key was reused for different intent |
 | `invalid-operation` | 422 | Request schema, document, or operation batch is invalid |
 | `unsupported-schema-version` | 422 | Design document schema version is not supported |
 | `internal-failure` | 500 | Repository or unexpected application failure |
@@ -72,17 +85,19 @@ client can refetch before retrying.
 ## Verification
 
 Run `pnpm test:api` from `frontend/`. The suite covers service use cases,
-application-boundary authorization, optimistic conflict handling, malformed
-HTTP input, correlation/revision headers, direct-service/HTTP equivalence, and
-the typed client against the in-memory Route Handlers.
+application-boundary authorization, Workspace isolation, membership mapping,
+idempotency, optimistic conflict handling, rollback, audit minimization,
+malformed HTTP input, correlation/revision headers, direct-service/HTTP
+equivalence, and the typed client against the in-memory Route Handlers.
 
 ## Operational caveats
 
-- The singleton repository resets on process restart and does not coordinate
-  across server instances.
+- The in-memory development repository resets on process restart. PostgreSQL is
+  the only production source of truth.
 - `initial` and `draft` snapshots are transitional application wrappers, not
   the accepted immutable Revision workflow defined for Milestone 5.
-- Local actor headers are trusted only for this development milestone.
-- There are no database entities or migrations. PostgreSQL/TypeORM persistence
-  and WorkOS identity integration begin in Milestone 4, with migrations owned
-  exclusively by Dhyan.
+- WorkOS identity alone grants no application access; mappings and active
+  membership must be provisioned.
+- TypeORM entities and the persistent adapter exist, but Dhyan must generate,
+  review, register, and run the migration before PostgreSQL integration is
+  enabled. See [server storage and authorization](./SERVER_STORAGE_AND_AUTHORIZATION.md).

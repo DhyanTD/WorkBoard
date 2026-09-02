@@ -10,9 +10,11 @@ export async function GET(
     params,
   }: { params: Promise<{ designId: string; revisionId: string }> },
 ) {
-  const actor = actorFromRequest(request);
+  const runtime = await getDesignRuntime();
+  const resolved = await actorFromRequest(request, runtime.actorDirectory);
+  if (!resolved.ok) return applicationResponse(resolved.failure);
   const { designId, revisionId } = await params;
   return applicationResponse(
-    await getDesignRuntime().service.getSnapshot(actor, designId, revisionId),
+    await runtime.service.getSnapshot(resolved.actor, designId, revisionId),
   );
 }

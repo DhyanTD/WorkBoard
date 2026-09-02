@@ -9,10 +9,18 @@ import type { PersistedBoardState } from "@/storage/board/types";
 export const LEGACY_DESIGN_ID = "design-legacy-board";
 export const LEGACY_VIEW_ID = "view-legacy-board";
 
+type LegacyConversionOptions = {
+  designId?: string;
+  viewId?: string;
+};
+
 export const convertLegacyBoardToDesign = (
   board: PersistedBoardState,
+  options: LegacyConversionOptions = {},
 ): ApplyDesignOperationsResult => {
-  const document = createEmptyDesignDocument(LEGACY_DESIGN_ID, {
+  const designId = options.designId ?? LEGACY_DESIGN_ID;
+  const viewId = options.viewId ?? LEGACY_VIEW_ID;
+  const document = createEmptyDesignDocument(designId, {
     name: "Imported legacy Board",
     description: "A lossless annotation import from the browser-local version-1 Board.",
     assumptions: [
@@ -34,7 +42,7 @@ export const convertLegacyBoardToDesign = (
     {
       kind: "add-view",
       view: {
-        id: LEGACY_VIEW_ID,
+        id: viewId,
         kind: "system-context",
         name: "Legacy Board import",
         systemId: "system-legacy-board",
@@ -54,7 +62,7 @@ export const convertLegacyBoardToDesign = (
       annotation: {
         id: `annotation-legacy-${index}-${stroke.id ?? "stroke"}`,
         kind: "legacy-stroke",
-        viewId: LEGACY_VIEW_ID,
+        viewId,
         stroke: {
           ...stroke,
           points: stroke.points.map((point) => ({ ...point })),

@@ -24,8 +24,10 @@ import {
 } from "@/semantic/editOperations";
 import { convertLegacyBoardToDesign } from "@/semantic/legacyBoardToDesign";
 import type { PersistedBoardState } from "@/storage/board/types";
+import { designCache, fingerprintPayload } from "@/storage/design/designCache";
 
 export const ACTIVE_DESIGN_STORAGE_KEY = "open-workboard.active-design-id";
+export const ACTIVE_WORKSPACE_STORAGE_KEY = "open-workboard.active-workspace-id";
 
 export type SemanticWorkbenchMode =
   | "select"
@@ -46,6 +48,7 @@ export type RelationshipChanges = {
 
 type SemanticDesignState = {
   document: DesignDocument | null;
+  workspaceId: string | null;
   currentRevisionId: string | null;
   activeViewId: string | null;
   selectedElementId: string | null;
@@ -90,9 +93,10 @@ const cloneDocument = (document: DesignDocument) => structuredClone(document);
 const currentView = (state: SemanticDesignState) =>
   state.document?.views.find((view) => view.id === state.activeViewId);
 
-const persistActiveDesignId = (designId: string) => {
+const persistActiveDesign = (workspaceId: string, designId: string) => {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(ACTIVE_DESIGN_STORAGE_KEY, designId);
+    window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, workspaceId);
   }
 };
 
@@ -101,7 +105,42 @@ const storedDesignId = () => {
   return window.localStorage.getItem(ACTIVE_DESIGN_STORAGE_KEY);
 };
 
+const storedWorkspaceId = () => {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+};
+
 const initialMessage = "Select an element to inspect its semantic properties.";
+
+const readCachedDesign = async (workspaceId: string, designId: string) => {
+  try {
+    return await designCache.get(workspaceId, designId);
+  } catch {
+    return undefined;
+  }
+};
+
+const cacheConfirmedDesign = async (
+  workspaceId: string,
+  document: DesignDocument,
+  currentRevisionId: string,
+) => {
+  try {
+    await designCache.saveConfirmed(workspaceId, document, currentRevisionId);
+  } catch {
+    // The server remains canonical when browser storage is unavailable.
+  }
+};
+
+const cacheOfflineDesign = (
+  workspaceId: string,
+  document: DesignDocument,
+  currentRevisionId: string,
+) => {
+  void designCache
+    .saveOffline(workspaceId, document, currentRevisionId)
+    .catch(() => undefined);
+};
 
 export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => {
   const applyOperations = (operations: DesignOperation[], message?: string) => {
@@ -125,11 +164,19 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
       issues: result.warnings,
       message: message ?? null,
     });
+    if (state.workspaceId && state.currentRevisionId) {
+      cacheOfflineDesign(
+        state.workspaceId,
+        result.document,
+        state.currentRevisionId,
+      );
+    }
     return true;
   };
 
   return {
     document: null,
+    workspaceId: null,
     currentRevisionId: null,
     activeViewId: null,
     selectedElementId: null,
@@ -151,6 +198,30 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         requestedDesignId ?? storedDesignId() ?? COMMERCE_PLATFORM_DOCUMENT_ID;
       const result = await designApiClient.getDesignHead(designId);
       if (!result.ok) {
+        const workspaceId = storedWorkspaceId();
+        const cached = workspaceId
+          ? await readCachedDesign(workspaceId, designId)
+          : undefined;
+        if (cached) {
+          set({
+            document: cached.document,
+            workspaceId: cached.workspaceId,
+            currentRevisionId: cached.currentRevisionId,
+            activeViewId: cached.document.views[0]?.id ?? null,
+            selectedElementId: null,
+            selectedRelationshipId: null,
+            connectionSourceId: null,
+            past: [],
+            future: [],
+            status: "ready",
+            message:
+              cached.state === "offline-draft"
+                ? "Server unavailable. Loaded the browser's offline draft."
+                : "Server unavailable. Loaded the last confirmed browser cache.",
+            issues: [],
+          });
+          return;
+        }
         set({
           status: "error",
           message: result.error.message,
@@ -159,9 +230,15 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         return;
       }
       const document = result.data.snapshot.document;
-      persistActiveDesignId(document.id);
+      persistActiveDesign(result.data.workspaceId, document.id);
+      await cacheConfirmedDesign(
+        result.data.workspaceId,
+        document,
+        result.data.currentRevisionId,
+      );
       set({
         document,
+        workspaceId: result.data.workspaceId,
         currentRevisionId: result.data.currentRevisionId,
         activeViewId: document.views[0]?.id ?? null,
         selectedElementId: null,
@@ -439,6 +516,13 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         selectedRelationshipId: null,
         message: "Last semantic edit undone.",
       });
+      if (state.workspaceId && state.currentRevisionId) {
+        cacheOfflineDesign(
+          state.workspaceId,
+          previous,
+          state.currentRevisionId,
+        );
+      }
     },
 
     redo: () => {
@@ -453,6 +537,9 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         selectedRelationshipId: null,
         message: "Semantic edit restored.",
       });
+      if (state.workspaceId && state.currentRevisionId) {
+        cacheOfflineDesign(state.workspaceId, next, state.currentRevisionId);
+      }
     },
 
     saveDraft: async () => {
@@ -468,10 +555,18 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         return;
       }
       set({ status: "saving", message: "Saving draft…" });
+      const idempotencyKey = `draft:${await fingerprintPayload(
+        JSON.stringify({
+          designId: state.document.id,
+          expectedRevisionId: state.currentRevisionId,
+          document: state.document,
+        }),
+      )}`;
       const result = await designApiClient.saveDraft(
         state.document.id,
         state.document,
         state.currentRevisionId,
+        idempotencyKey,
       );
       if (!result.ok) {
         set({
@@ -482,8 +577,14 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         });
         return;
       }
+      await cacheConfirmedDesign(
+        result.data.workspaceId,
+        result.data.snapshot.document,
+        result.data.currentRevisionId,
+      );
       set({
         document: result.data.snapshot.document,
+        workspaceId: result.data.workspaceId,
         currentRevisionId: result.data.currentRevisionId,
         past: [],
         future: [],
@@ -494,7 +595,11 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
     },
 
     importLegacyBoard: async (board) => {
-      const converted = convertLegacyBoardToDesign(board);
+      const fingerprint = await fingerprintPayload(JSON.stringify(board));
+      const converted = convertLegacyBoardToDesign(board, {
+        designId: `design-legacy-board-${fingerprint.slice(0, 16)}`,
+        viewId: `view-legacy-board-${fingerprint.slice(0, 16)}`,
+      });
       if (!converted.ok) {
         set({
           status: "error",
@@ -504,7 +609,10 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         return;
       }
       set({ status: "loading", message: "Importing legacy annotations…" });
-      const created = await designApiClient.createDesign(converted.document);
+      const created = await designApiClient.createDesign(
+        converted.document,
+        `legacy:${fingerprint}`,
+      );
       const head = created.ok
         ? created
         : created.error.code === "conflict"
@@ -514,9 +622,27 @@ export const useSemanticDesignStore = create<SemanticDesignState>((set, get) => 
         set({ status: "error", message: head.error.message });
         return;
       }
-      persistActiveDesignId(head.data.designId);
+      persistActiveDesign(head.data.workspaceId, head.data.designId);
+      await cacheConfirmedDesign(
+        head.data.workspaceId,
+        head.data.snapshot.document,
+        head.data.currentRevisionId,
+      );
+      try {
+        await designCache.confirmLegacyImport({
+          fingerprint,
+          source: "open-workboard-v1",
+          designId: head.data.designId,
+          workspaceId: head.data.workspaceId,
+          revisionId: head.data.currentRevisionId,
+          confirmedAt: new Date().toISOString(),
+        });
+      } catch {
+        // A confirmed server import must not fail because browser storage is unavailable.
+      }
       set({
         document: head.data.snapshot.document,
+        workspaceId: head.data.workspaceId,
         currentRevisionId: head.data.currentRevisionId,
         activeViewId: head.data.snapshot.document.views[0]?.id ?? null,
         selectedElementId: null,

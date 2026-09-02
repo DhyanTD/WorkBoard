@@ -16,6 +16,7 @@ import type {
 import { getDesignRuntime } from "@/server/design/runtime";
 
 const actorHeaders = {
+  "x-open-workboard-development-auth": "true",
   "x-actor-id": "actor-contract",
   "x-workspace-id": "workspace-acme",
   "x-actor-roles": "owner",
@@ -54,8 +55,11 @@ describe("Design HTTP contract", () => {
       `http://workboard.test/api/designs/${COMMERCE_PLATFORM_DOCUMENT_ID}`,
       { headers: actorHeaders },
     );
-    const direct = await getDesignRuntime().service.getDesignHead(
-      actorFromRequest(request),
+    const runtime = await getDesignRuntime();
+    const resolved = await actorFromRequest(request, runtime.actorDirectory);
+    if (!resolved.ok) throw new Error(resolved.failure.error.message);
+    const direct = await runtime.service.getDesignHead(
+      resolved.actor,
       COMMERCE_PLATFORM_DOCUMENT_ID,
     );
     const response = await getDesign(request, {
@@ -90,8 +94,11 @@ describe("Design HTTP contract", () => {
         body: JSON.stringify({ operations }),
       },
     );
-    const direct = await getDesignRuntime().service.validateOperations(
-      actorFromRequest(request),
+    const runtime = await getDesignRuntime();
+    const resolved = await actorFromRequest(request, runtime.actorDirectory);
+    if (!resolved.ok) throw new Error(resolved.failure.error.message);
+    const direct = await runtime.service.validateOperations(
+      resolved.actor,
       COMMERCE_PLATFORM_DOCUMENT_ID,
       operations,
     );

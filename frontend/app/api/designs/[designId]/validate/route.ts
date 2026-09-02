@@ -13,13 +13,19 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ designId: string }> },
 ) {
-  const actor = actorFromRequest(request);
-  const body = await parseJsonBody(request, actor, validateOperationsRequestSchema);
+  const runtime = await getDesignRuntime();
+  const resolved = await actorFromRequest(request, runtime.actorDirectory);
+  if (!resolved.ok) return applicationResponse(resolved.failure);
+  const body = await parseJsonBody(
+    request,
+    resolved.actor,
+    validateOperationsRequestSchema,
+  );
   if (!body.ok) return applicationResponse(body.failure);
   const { designId } = await params;
   return applicationResponse(
-    await getDesignRuntime().service.validateOperations(
-      actor,
+    await runtime.service.validateOperations(
+      resolved.actor,
       designId,
       body.data.operations,
     ),

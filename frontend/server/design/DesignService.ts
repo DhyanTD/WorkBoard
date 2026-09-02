@@ -5,11 +5,8 @@ import {
   type DesignDocument,
   type DesignOperation,
 } from "@/domain/design";
-import {
-  authorizeRead,
-  authorizeWorkspace,
-  authorizeWrite,
-} from "@/server/design/authorization";
+import { createHash } from "node:crypto";
+import { authorizeRead, authorizeWrite } from "@/server/design/authorization";
 import type { DesignRepository } from "@/server/design/repositories/DesignRepository";
 import type {
   ActorContext,
@@ -20,12 +17,20 @@ import type {
   DesignSnapshot,
   DesignSummary,
   OperationValidation,
+  PersistenceContext,
+  WriteCommand,
 } from "@/server/design/models";
 
 type ServiceOptions = {
   createId?: (prefix: string) => string;
   now?: () => string;
 };
+
+export type WriteOptions = {
+  idempotencyKey?: string;
+};
+
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 const notFound = (
   actor: ActorContext,
@@ -56,6 +61,13 @@ const toSummary = (record: DesignRecord): DesignSummary => {
   };
 };
 
+const persistenceContext = (actor: ActorContext): PersistenceContext => ({
+  actorId: actor.actorId,
+  workspaceId: actor.workspaceId,
+  correlationId: actor.correlationId,
+  authenticationMethod: actor.authenticationMethod,
+});
+
 export class DesignService {
   private readonly createId: (prefix: string) => string;
   private readonly now: () => string;
@@ -70,9 +82,9 @@ export class DesignService {
 
   async listDesigns(actor: ActorContext): Promise<ApplicationResult<DesignSummary[]>> {
     const denied = authorizeRead(actor);
-    if (denied) return denied;
+    if (denied) return this.denied(actor, denied, "design.list", actor.workspaceId);
     try {
-      const records = await this.repository.listByWorkspace(actor.workspaceId);
+      const records = await this.repository.listByWorkspace(persistenceContext(actor));
       return {
         ok: true,
         data: records.map(toSummary),
@@ -86,23 +98,13 @@ export class DesignService {
   async createDesign(
     actor: ActorContext,
     document: DesignDocument,
+    options: WriteOptions = {},
   ): Promise<ApplicationResult<DesignHead>> {
     const denied = authorizeWrite(actor);
-    if (denied) return denied;
+    if (denied) return this.denied(actor, denied, "design.create", document.id);
     const validationFailure = this.validateDocument(actor, document);
     if (validationFailure) return validationFailure;
     try {
-      if (await this.repository.findById(document.id)) {
-        return {
-          ok: false,
-          error: {
-            code: "conflict",
-            message: `Design '${document.id}' already exists.`,
-            recoveryHint: "Use a new Design ID or fetch the existing Design.",
-          },
-          correlationId: actor.correlationId,
-        };
-      }
       const timestamp = this.now();
       const snapshot: DesignSnapshot = {
         id: this.createId("revision"),
@@ -120,12 +122,39 @@ export class DesignService {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      await this.repository.save(record);
+      const written = await this.repository.create(
+        record,
+        this.writeCommand(actor, "design.create", document, options, timestamp),
+      );
+      if (written.status === "duplicate") {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: `Design '${document.id}' already exists.`,
+            recoveryHint: "Use a new Design ID or fetch the existing Design.",
+          },
+          correlationId: actor.correlationId,
+        };
+      }
+      if (written.status === "idempotency-conflict") {
+        return this.idempotencyConflict(actor);
+      }
+      if (written.status !== "applied" && written.status !== "replayed") {
+        return this.internalFailure(actor);
+      }
+      const persistedSnapshot = currentSnapshot(written.record);
+      if (!persistedSnapshot) return this.internalFailure(actor);
       return {
         ok: true,
-        data: { designId: record.id, currentRevisionId: snapshot.id, snapshot },
+        data: {
+          designId: written.record.id,
+          workspaceId: written.record.workspaceId,
+          currentRevisionId: persistedSnapshot.id,
+          snapshot: persistedSnapshot,
+        },
         correlationId: actor.correlationId,
-        currentRevisionId: snapshot.id,
+        currentRevisionId: persistedSnapshot.id,
       };
     } catch {
       return this.internalFailure(actor);
@@ -137,18 +166,17 @@ export class DesignService {
     designId: string,
   ): Promise<ApplicationResult<DesignHead>> {
     const denied = authorizeRead(actor);
-    if (denied) return denied;
+    if (denied) return this.denied(actor, denied, "design.read", designId);
     try {
-      const record = await this.repository.findById(designId);
+      const record = await this.repository.findById(persistenceContext(actor), designId);
       if (!record) return notFound(actor, designId);
-      const workspaceDenied = authorizeWorkspace(actor, record.workspaceId);
-      if (workspaceDenied) return workspaceDenied;
       const snapshot = currentSnapshot(record);
       if (!snapshot) return this.internalFailure(actor, record.currentSnapshotId);
       return {
         ok: true,
         data: {
           designId,
+          workspaceId: record.workspaceId,
           currentRevisionId: snapshot.id,
           snapshot,
         },
@@ -166,19 +194,19 @@ export class DesignService {
     revisionId: string,
   ): Promise<ApplicationResult<DesignSnapshot>> {
     const denied = authorizeRead(actor);
-    if (denied) return denied;
+    if (denied) return this.denied(actor, denied, "revision.read", revisionId);
     try {
-      const record = await this.repository.findById(designId);
-      if (!record) return notFound(actor, designId);
-      const workspaceDenied = authorizeWorkspace(actor, record.workspaceId);
-      if (workspaceDenied) return workspaceDenied;
-      const snapshot = record.snapshots.find((candidate) => candidate.id === revisionId);
-      if (!snapshot) return notFound(actor, `${designId}/revisions/${revisionId}`, record.currentSnapshotId);
+      const found = await this.repository.findSnapshot(
+        persistenceContext(actor),
+        designId,
+        revisionId,
+      );
+      if (!found) return notFound(actor, `${designId}/revisions/${revisionId}`);
       return {
         ok: true,
-        data: snapshot,
+        data: found.snapshot,
         correlationId: actor.correlationId,
-        currentRevisionId: record.currentSnapshotId,
+        currentRevisionId: found.record.currentSnapshotId,
       };
     } catch {
       return this.internalFailure(actor);
@@ -223,9 +251,10 @@ export class DesignService {
     designId: string,
     document: DesignDocument,
     expectedRevisionId: string,
+    options: WriteOptions = {},
   ): Promise<ApplicationResult<DesignHead>> {
     const denied = authorizeWrite(actor);
-    if (denied) return denied;
+    if (denied) return this.denied(actor, denied, "design.save-draft", designId);
     const validationFailure = this.validateDocument(actor, document);
     if (validationFailure) return validationFailure;
     if (document.id !== designId) {
@@ -240,22 +269,6 @@ export class DesignService {
       };
     }
     try {
-      const record = await this.repository.findById(designId);
-      if (!record) return notFound(actor, designId);
-      const workspaceDenied = authorizeWorkspace(actor, record.workspaceId);
-      if (workspaceDenied) return workspaceDenied;
-      if (record.currentSnapshotId !== expectedRevisionId) {
-        return {
-          ok: false,
-          error: {
-            code: "conflict",
-            message: "The Design changed after this draft was loaded.",
-            recoveryHint: "Refetch the current snapshot before saving again.",
-          },
-          correlationId: actor.correlationId,
-          currentRevisionId: record.currentSnapshotId,
-        };
-      }
       const timestamp = this.now();
       const snapshot: DesignSnapshot = {
         id: this.createId("draft"),
@@ -265,18 +278,49 @@ export class DesignService {
         createdAt: timestamp,
         createdByActorId: actor.actorId,
       };
-      const updated: DesignRecord = {
-        ...record,
-        currentSnapshotId: snapshot.id,
-        snapshots: [...record.snapshots, snapshot],
-        updatedAt: timestamp,
-      };
-      await this.repository.save(updated);
+      const written = await this.repository.appendDraft(
+        designId,
+        snapshot,
+        expectedRevisionId,
+        this.writeCommand(
+          actor,
+          "design.save-draft",
+          { document, expectedRevisionId },
+          options,
+          timestamp,
+        ),
+      );
+      if (written.status === "not-found") return notFound(actor, designId);
+      if (written.status === "idempotency-conflict") {
+        return this.idempotencyConflict(actor);
+      }
+      if (written.status === "revision-conflict") {
+        return {
+          ok: false,
+          error: {
+            code: "conflict",
+            message: "The Design changed after this draft was loaded.",
+            recoveryHint: "Refetch the current snapshot before saving again.",
+          },
+          correlationId: actor.correlationId,
+          currentRevisionId: written.currentRevisionId,
+        };
+      }
+      if (written.status !== "applied" && written.status !== "replayed") {
+        return this.internalFailure(actor);
+      }
+      const persistedSnapshot = currentSnapshot(written.record);
+      if (!persistedSnapshot) return this.internalFailure(actor);
       return {
         ok: true,
-        data: { designId, currentRevisionId: snapshot.id, snapshot },
+        data: {
+          designId,
+          workspaceId: written.record.workspaceId,
+          currentRevisionId: persistedSnapshot.id,
+          snapshot: persistedSnapshot,
+        },
         correlationId: actor.correlationId,
-        currentRevisionId: snapshot.id,
+        currentRevisionId: persistedSnapshot.id,
       };
     } catch {
       return this.internalFailure(actor);
@@ -322,5 +366,59 @@ export class DesignService {
       correlationId: actor.correlationId,
       currentRevisionId,
     };
+  }
+
+  private writeCommand(
+    actor: ActorContext,
+    operation: WriteCommand["operation"],
+    request: DesignDocument | { document: DesignDocument; expectedRevisionId: string },
+    options: WriteOptions,
+    timestamp: string,
+  ): WriteCommand {
+    return {
+      ...persistenceContext(actor),
+      operation,
+      idempotencyKey: options.idempotencyKey,
+      requestFingerprint: createHash("sha256")
+        .update(JSON.stringify(request))
+        .digest("hex"),
+      idempotencyExpiresAt: new Date(
+        new Date(timestamp).getTime() + IDEMPOTENCY_TTL_MS,
+      ).toISOString(),
+    };
+  }
+
+  private idempotencyConflict(actor: ActorContext): ApplicationFailure {
+    return {
+      ok: false,
+      error: {
+        code: "idempotency-conflict",
+        message: "The idempotency key was already used for a different request.",
+        recoveryHint: "Reuse a key only for byte-equivalent intent, or send a new key.",
+      },
+      correlationId: actor.correlationId,
+    };
+  }
+
+  private async denied(
+    actor: ActorContext,
+    failure: ApplicationFailure,
+    action: string,
+    resourceId: string,
+  ): Promise<ApplicationFailure> {
+    try {
+      await this.repository.recordDenied({
+        ...persistenceContext(actor),
+        id: this.createId("audit"),
+        action,
+        resourceType: resourceId === actor.workspaceId ? "workspace" : "design",
+        resourceId,
+        outcome: "denied",
+        createdAt: this.now(),
+      });
+    } catch {
+      return this.internalFailure(actor);
+    }
+    return failure;
   }
 }

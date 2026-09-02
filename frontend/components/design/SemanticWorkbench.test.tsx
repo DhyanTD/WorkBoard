@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import "fake-indexeddb/auto";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SemanticWorkbench from "@/components/design/SemanticWorkbench";
@@ -14,6 +15,7 @@ describe("SemanticWorkbench", () => {
     window.localStorage.clear();
     useSemanticDesignStore.setState({
       document: null,
+      workspaceId: null,
       currentRevisionId: null,
       activeViewId: null,
       selectedElementId: null,
@@ -26,6 +28,7 @@ describe("SemanticWorkbench", () => {
       ok: true,
       data: {
         designId: document.id,
+        workspaceId: "workspace-acme",
         currentRevisionId: "revision-component",
         snapshot: {
           id: "revision-component",

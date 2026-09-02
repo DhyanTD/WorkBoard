@@ -1,7 +1,7 @@
 # MCP System Design Workbench — Implementation Plan
 
 Status: Active
-Last updated: 2026-08-31
+Last updated: 2026-09-02
 Audience: Dhyan and implementation agents
 Scope: Evolve Open WorkBoard from a browser-local drawing board into a
 semantic, reviewable system-design workbench that people and AI agents can use
@@ -575,38 +575,39 @@ Proposal and review records are added in Milestone 5.
 
 ### Steps
 
-- [ ] M4.1 Resolve D2, D3, and D4 and record accepted decisions.
-- [ ] M4.2 Define persistence entities and indexes without coupling them to the
+- [x] M4.1 Resolve D2, D3, and D4 and record accepted decisions.
+- [x] M4.2 Define persistence entities and indexes without coupling them to the
   public design document schema.
-- [ ] M4.3 Define transaction boundaries for create design, create revision, and
+- [x] M4.3 Define transaction boundaries for create design, create revision, and
   move head pointer.
-- [ ] M4.4 Hand the entity/schema changes to Dhyan.
+- [x] M4.4 Hand the entity/schema changes to Dhyan.
 - [ ] **USER ACTION — MIGRATION:** Dhyan generates, reviews, registers, and runs
   the required database migration. Implementation must not create or modify it.
 - [ ] M4.5 Implement the persistent repository adapter after the migration is
-  available.
-- [ ] M4.6 Enforce workspace isolation and role/scope checks in every repository
+  available. The adapter code is complete; activation and PostgreSQL integration
+  verification remain gated on Dhyan's migration.
+- [x] M4.6 Enforce workspace isolation and role/scope checks in every repository
   call through the application service.
-- [ ] M4.7 Implement idempotency storage with actor, operation name, key, request
+- [x] M4.7 Implement idempotency storage with actor, operation name, key, request
   fingerprint, result reference, and expiry/retention policy.
-- [ ] M4.8 Add audit events for authenticated reads of sensitive designs and all
+- [x] M4.8 Add audit events for authenticated reads of sensitive designs and all
   writes. Avoid storing raw prompts or secrets.
-- [ ] M4.9 Change browser persistence from canonical storage to local cache,
+- [x] M4.9 Change browser persistence from canonical storage to local cache,
   offline draft, and legacy import source.
-- [ ] M4.10 Add an explicit, retry-safe import workflow for the version-1 local
+- [x] M4.10 Add an explicit, retry-safe import workflow for the version-1 local
   board. Remove or mark the legacy record imported only after the server confirms
   the resulting revision.
-- [ ] M4.11 Add backup, retention, and deletion behavior to the operational
+- [x] M4.11 Add backup, retention, and deletion behavior to the operational
   documentation.
 
 ### Security tests
 
-- [ ] A user cannot enumerate or read another workspace's designs.
-- [ ] A read-only actor cannot create or update a design.
-- [ ] A repeated idempotency key with the same request returns the same result.
-- [ ] A repeated idempotency key with a different request is rejected.
-- [ ] Audit records contain correlation and result IDs but no credentials.
-- [ ] A failed transaction cannot leave a design without a valid head revision.
+- [x] A user cannot enumerate or read another workspace's designs.
+- [x] A read-only actor cannot create or update a design.
+- [x] A repeated idempotency key with the same request returns the same result.
+- [x] A repeated idempotency key with a different request is rejected.
+- [x] Audit records contain correlation and result IDs but no credentials.
+- [x] A failed transaction cannot leave a design without a valid head revision.
 
 ### Documentation
 
@@ -618,8 +619,8 @@ Proposal and review records are added in Milestone 5.
 ### Exit criteria
 
 - [ ] Two different users can access permitted designs across browser sessions.
-- [ ] Workspace isolation tests pass.
-- [ ] Legacy import is retry-safe and does not delete the only surviving copy.
+- [x] Workspace isolation tests pass.
+- [x] Legacy import is retry-safe and does not delete the only surviving copy.
 - [ ] Dhyan confirms the migration has been applied in the target environment.
 
 ---

@@ -11,13 +11,13 @@ milestone status changes.
 | --- | --- |
 | Program status | `active` |
 | Current milestone | M4 — Shared persistence and authorization |
-| Milestone status | `ready` |
-| Current task | Await authorization to start M4.1 and its Dhyan-owned migration handoff |
+| Milestone status | `in-progress` |
+| Current task | Dhyan generates/applies the M4 migration; then run PostgreSQL multi-user integration smoke tests |
 | Task owner | Dhyan + implementation agent |
-| Started | 2026-08-31 |
-| Active blocker | None |
-| Next action | Review and authorize the M4 persistence/authentication scope before entities change |
-| Next gate | PostgreSQL/TypeORM entities and WorkOS actor adaptation are authorized; Dhyan generates required migrations |
+| Started | 2026-09-02 |
+| Active blocker | Dhyan-owned PostgreSQL migration has not been generated or applied |
+| Next action | Generate/review/apply the entity migration described in `SERVER_STORAGE_AND_AUTHORIZATION.md` |
+| Next gate | Migration applied; persistent two-user/session, isolation, restart, idempotency, and rollback smoke tests pass |
 | Related commits / pull requests | None yet |
 
 Only one milestone or explicitly authorized parallel group may be
@@ -32,7 +32,7 @@ Only one milestone or explicitly authorized parallel group may be
 | M1 — Semantic design domain | `completed` | All M1 tasks and exit criteria passed on 2026-08-31 |
 | M2 — Semantic canvas adapter | `completed` | All tasks, UX scenarios, regression suites, and three-engine journeys passed on 2026-08-31 |
 | M3 — Application service and web API | `completed` | Service, authorization, repository, typed routes/client, and equivalence contracts passed on 2026-08-31 |
-| M4 — Shared persistence and authorization | `ready` | M3 dependency is complete; implementation requires a new direct request and migration handoff |
+| M4 — Shared persistence and authorization | `in-progress` | Code/security gates pass; Dhyan-owned migration and real PostgreSQL smoke tests remain |
 | M5 — Revisions and change proposals | `not-started` | Requires M4 |
 | M6 — Human review workflow | `not-started` | Requires M2 and M5 |
 | M7 — MCP read and validation tools | `not-started` | Requires M5 |
@@ -112,8 +112,45 @@ authorized both together on 2026-08-31; both workstreams completed that day.
 ### Migration handoffs
 
 None in Milestones 2 or 3. The runtime is deliberately in-memory; no database
-entities or migrations were created or changed. Milestone 4 is now `ready`,
-but Dhyan must generate every migration after its entity design is authorized.
+entities or migrations were created or changed. Milestone 4 then moved to
+`ready`; Dhyan remains responsible for every generated migration.
+
+## Active milestone: M4
+
+Dhyan authorized direct M4 implementation on 2026-09-02. The application code,
+security tests, browser recovery behavior, and schema handoff are complete.
+The milestone remains `in-progress` because repository policy assigns migration
+generation/application to Dhyan and the unapplied schema cannot yet receive a
+real PostgreSQL integration test.
+
+### Tasks
+
+| Task | Status | Owner | Evidence / next action |
+| --- | --- | --- | --- |
+| M4.1 Accepted gates D2–D4 | `completed` | Dhyan + implementation agent | ADRs 0002–0004 reconciled with the implementation |
+| M4.2–M4.4 entities, indexes, transactions, schema handoff | `completed` | Implementation agent | Eight TypeORM schemas and the handoff in [server storage and authorization](./SERVER_STORAGE_AND_AUTHORIZATION.md); no migration files changed |
+| USER ACTION — PostgreSQL migration | `pending` | Dhyan | Generate, review, register, and apply from `frontend/server/persistence/entities.ts` |
+| M4.5 persistent repository | `pending-integration` | Dhyan + implementation agent | Adapter implemented; activate and smoke-test after migration |
+| M4.6 Workspace isolation and role/scope enforcement | `completed` | Implementation agent | WorkOS identity mapping plus application-owned active membership and Workspace-scoped queries |
+| M4.7 idempotency | `completed` | Implementation agent | Actor/operation/key identity, SHA-256 fingerprint, result references, 24-hour expiry, replay/conflict tests |
+| M4.8 audit | `completed` | Implementation agent | Sensitive reads, denials, writes, replay/correlation/result coverage; no bodies or credentials stored |
+| M4.9–M4.10 cache/offline/import | `completed` | Implementation agent | Workspace-scoped Design cache, offline drafts, deterministic retry key, confirmed receipt, source retained |
+| M4.11 operations | `completed` | Implementation agent | Backup, retention, expiry, deletion, restore, and source-retention policy documented |
+
+### Exit criteria
+
+- [ ] Two mapped users access permitted Designs across browser sessions and a
+  server restart. Pending migration and PostgreSQL smoke test.
+- [x] Workspace isolation unit/contract tests pass.
+- [x] Legacy import is retry-safe and retains the version-1 source Board.
+- [ ] Dhyan confirms the migration is applied in the target environment.
+
+### Migration handoff
+
+Status: `pending-user-action`. No migration was created, edited, renamed,
+registered, or deleted. The exact tables, columns, JSONB field, constraints,
+indexes, provisioning requirements, and post-apply smoke tests are documented
+in [server storage and authorization](./SERVER_STORAGE_AND_AUTHORIZATION.md).
 
 ### Decision gates
 
@@ -175,6 +212,11 @@ registering, renaming, or deleting migrations in later milestones.
 | 2026-08-31 | `pnpm verify` | Passed: lint, type-check, 38 Vitest tests, production build, and 6 Playwright runs across Chromium, Firefox, and WebKit |
 | 2026-08-31 | M2/M3 database migrations changed | No |
 | 2026-08-31 | M0 product code and database migrations changed | No |
+| 2026-09-02 | M4 decision/contract reconciliation | D2 JSONB snapshots, D3 TypeORM transaction boundary, D4 WorkOS identity plus app-owned membership remain aligned; no new ADR required |
+| 2026-09-02 | M4 database migrations changed | No; entity/schema handoff recorded for Dhyan |
+| 2026-09-02 | M4 security and recovery tests | Passed: cross-Workspace not-found behavior, viewer write denial, idempotent replay/key conflict, minimized audit, rollback, WorkOS membership mapping, Workspace-scoped cache, confirmed import receipt |
+| 2026-09-02 | `pnpm verify` | Passed: lint, type-check, 48 Vitest tests, TypeORM metadata build, production build, and 6 Playwright journeys across Chromium, Firefox, and WebKit |
+| 2026-09-02 | Real PostgreSQL/WorkOS multi-user smoke test | Pending Dhyan-owned migration, provider configuration, and mapping seed |
 
 ## Activity log
 
@@ -198,6 +240,8 @@ registering, renaming, or deleting migrations in later milestones.
 | 2026-08-31 | Milestone 1 completed | Typed domain package, fixture, tests, documentation, lint, type-check, and build passed; M2 and M3 moved to `ready` |
 | 2026-08-31 | Milestones 2 and 3 started | Dhyan authorized the roadmap's parallel semantic UI and application/API workstreams |
 | 2026-08-31 | Milestones 2 and 3 completed | Semantic workbench, retained legacy import, provider-neutral service, typed API/client, documentation, and all exit criteria passed; M4 moved to `ready` |
+| 2026-09-02 | Milestone 4 started | Dhyan authorized direct implementation without optional decision pauses |
+| 2026-09-02 | M4 implementation and handoff completed | Persistent adapter, entities, WorkOS adaptation, isolation, idempotency, audit, browser cache/import, operations documentation, and full verification pass; milestone remains in progress pending migration/application smoke test |
 
 ## Update protocol
 

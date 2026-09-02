@@ -75,9 +75,24 @@ Design. The converter does not infer people, systems, containers,
 relationships, or responsibilities from drawing geometry.
 
 The original IndexedDB record is retained after conversion, including after a
-successful transitional in-memory API save. This makes conversion retry-safe
-while the API is not durable. Milestone 4 must establish a verified
-server-backed save and recovery policy before code may delete that record.
+successful server save. Import derives a deterministic Design ID and
+`Idempotency-Key` from a SHA-256 fingerprint of the version-1 Board. A separate
+receipt is stored only after the server confirms the resulting revision. The
+source Board is never deleted by Milestone 4, so a failed request cannot remove
+the only surviving copy.
+
+## Semantic Design cache and offline drafts
+
+PostgreSQL is the canonical Design store. The separate
+`open-workboard-design-cache` IndexedDB database holds Workspace-scoped cached
+Designs and confirmed legacy-import receipts. It never changes authorization
+and is never treated as proof that the current user can access a Design.
+
+After a successful fetch/save, the cache records the confirmed document and
+revision. Semantic operations mark that cached copy as an offline draft. When
+the API is unavailable, the workbench may load a cache only when both the
+stored Workspace ID and Design ID match. When IndexedDB is disabled or full,
+the server-backed UI continues without cache recovery.
 
 Semantic camera position, zoom, selected IDs, clipboard, connection source,
 pointer gestures, and undo/redo stacks are also local UI state and are not part
@@ -86,12 +101,10 @@ they are persisted presentation data inside the active View layout.
 
 ## Operational caveats
 
-Persistence is local to the current browser profile and origin; it does not sync
-between browsers, devices, or users. If IndexedDB is disabled, unavailable, or
-full, the in-memory board continues to work but recent changes may not be
-available after a reload. The Dexie database schema and persisted Zustand state
-schema are both version `1`; future breaking changes require coordinated schema
-handling before either version is increased. Keep `pnpm test:storage` passing
-while adding conversion or shared-persistence behavior. The semantic converter
-and real-browser retention journey are covered by `pnpm test:components` and
-`pnpm test:e2e`, respectively.
+Browser persistence is local to the current profile and origin; only the
+PostgreSQL-backed Design syncs across sessions/users. If IndexedDB is disabled,
+unavailable, or full, recent offline changes may not survive reload. Both
+Dexie databases currently use schema version `1`; future breaking changes need
+coordinated schema handling. Keep `pnpm test:storage` passing. The semantic
+converter and real-browser retention journey are covered by
+`pnpm test:components` and `pnpm test:e2e`, respectively.

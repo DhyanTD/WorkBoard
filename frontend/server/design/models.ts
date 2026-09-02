@@ -2,6 +2,10 @@ import type { DesignDocument, DomainIssue } from "@/domain/design";
 
 export type ActorRole = "owner" | "editor" | "viewer";
 export type ActorScope = "design:read" | "design:write";
+export type AuthenticationMethod =
+  | "workos-session"
+  | "workos-access-token"
+  | "development";
 
 export type ActorContext = {
   actorId: string;
@@ -9,6 +13,8 @@ export type ActorContext = {
   roles: ActorRole[];
   scopes: ActorScope[];
   correlationId: string;
+  authenticationMethod: AuthenticationMethod;
+  sessionId?: string;
 };
 
 export type DesignSnapshotKind = "initial" | "draft";
@@ -41,6 +47,7 @@ export type DesignSummary = {
 
 export type DesignHead = {
   designId: string;
+  workspaceId: string;
   currentRevisionId: string;
   snapshot: DesignSnapshot;
 };
@@ -53,9 +60,11 @@ export type OperationValidation = {
 };
 
 export type ApplicationErrorCode =
+  | "unauthenticated"
   | "not-found"
   | "forbidden"
   | "conflict"
+  | "idempotency-conflict"
   | "invalid-operation"
   | "unsupported-schema-version"
   | "internal-failure";
@@ -82,3 +91,38 @@ export type ApplicationFailure = {
 };
 
 export type ApplicationResult<T> = ApplicationSuccess<T> | ApplicationFailure;
+
+export type DesignOperationName = "design.create" | "design.save-draft";
+
+export type PersistenceContext = {
+  actorId: string;
+  workspaceId: string;
+  correlationId: string;
+  authenticationMethod: AuthenticationMethod;
+};
+
+export type WriteCommand = PersistenceContext & {
+  operation: DesignOperationName;
+  requestFingerprint: string;
+  idempotencyKey?: string;
+  idempotencyExpiresAt: string;
+};
+
+export type AuditOutcome = "success" | "denied" | "failure";
+
+export type AuditEvent = PersistenceContext & {
+  id: string;
+  action: string;
+  resourceType: "workspace" | "design" | "revision";
+  resourceId: string;
+  resultId?: string;
+  outcome: AuditOutcome;
+  createdAt: string;
+};
+
+export type DesignWriteResult =
+  | { status: "applied" | "replayed"; record: DesignRecord }
+  | { status: "duplicate" }
+  | { status: "not-found" }
+  | { status: "idempotency-conflict" }
+  | { status: "revision-conflict"; currentRevisionId: string };

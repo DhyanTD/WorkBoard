@@ -19,6 +19,9 @@
 - [Design application service and HTTP API](./DESIGN_APPLICATION_API.md) —
   provider-neutral use cases, authorization boundary, typed Route Handlers,
   client adapter, errors, and transitional runtime caveats.
+- [Server storage and authorization](./SERVER_STORAGE_AND_AUTHORIZATION.md) —
+  PostgreSQL/TypeORM model, WorkOS membership mapping, transaction and
+  idempotency behavior, migration handoff, backup, retention, and deletion.
 - [MCP system-design verification contract](./MCP_SYSTEM_DESIGN_VERIFICATION.md)
   — stable command names, test-layer boundaries, milestone gates, and evidence
   requirements.

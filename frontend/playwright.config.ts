@@ -30,6 +30,11 @@ export default defineConfig({
   },
   webServer: {
     command: "pnpm start --port 3100",
+    env: {
+      ...process.env,
+      OPEN_WORKBOARD_DEV_AUTH: "true",
+      OPEN_WORKBOARD_USE_IN_MEMORY: "true",
+    },
     url: "http://127.0.0.1:3100",
     reuseExistingServer: false,
     timeout: 120_000,

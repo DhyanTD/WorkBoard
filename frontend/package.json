@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test:storage": "vitest run storage/board",
+    "test:storage": "vitest run storage",
     "test:domain": "vitest run domain/design",
     "test:components": "vitest run components store semantic",
     "test:api": "vitest run server app/api client",
@@ -16,10 +16,15 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm test:storage && pnpm test:domain && pnpm test:components && pnpm test:api && pnpm test:e2e"
   },
   "dependencies": {
+    "@workos-inc/authkit-nextjs": "4.3.1",
+    "@workos-inc/node": "10.13.0",
     "dexie": "4.4.5",
     "next": "16.2.10",
+    "pg": "8.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "reflect-metadata": "0.2.2",
+    "typeorm": "1.1.1",
     "zod": "4.5.4",
     "zustand": "^5.0.14"
   },
